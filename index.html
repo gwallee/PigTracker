@@ -58,7 +58,9 @@ header .sub{color:var(--ink-2);margin-top:4px}
 .countdown b{font-family:var(--display);font-size:30px;line-height:1}
 .countdown span{font-size:13px;opacity:.9}
 .meta{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:-6px;font-size:13px;color:var(--ink-3)}
-.refresh{font:inherit;font-size:14px;font-weight:600;color:var(--ribbon);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 14px;min-height:40px;cursor:pointer;touch-action:manipulation}
+.meta .actions{display:flex;gap:8px;flex-wrap:wrap}
+.refresh{font:inherit;font-size:14px;font-weight:600;color:var(--ribbon);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 14px;min-height:40px;cursor:pointer;touch-action:manipulation;text-decoration:none;display:inline-flex;align-items:center}
+.refresh[hidden]{display:none}
 .refresh[disabled]{opacity:.6;cursor:default}
 
 .banner{background:var(--feed-soft);color:var(--ink);border:1px dashed var(--feed);border-radius:8px;padding:10px 14px;font-size:14px;overflow-wrap:anywhere}
@@ -181,7 +183,10 @@ details.settings form{margin-top:12px}
 
   <div class="meta">
     <span id="updated" aria-live="polite">Loading…</span>
-    <button class="refresh" type="button" id="refreshBtn">Refresh</button>
+    <span class="actions">
+      <a class="refresh" id="sheetLink" href="#" target="_blank" rel="noopener" hidden>Open sheet ↗</a>
+      <button class="refresh" type="button" id="refreshBtn">Refresh</button>
+    </span>
   </div>
 
   <div class="banner" id="configBanner" hidden><b>Not connected to a sheet yet.</b> Set <code>API_URL</code> in <code>config.js</code> to your Apps Script web app URL. Until then, entries stay in this browser tab only.</div>
@@ -294,7 +299,7 @@ details.settings form{margin-top:12px}
     </details>
   </section>
 
-  <div class="foot">Data lives in your Google Sheet. Fix a mistake there, or re-enter the same date to overwrite it.</div>
+  <div class="foot" id="foot">Data lives in your Google Sheet. Re-enter a date to overwrite it, or fix it in the sheet. Undo is the sheet's version history.</div>
 </div>
 
 <script src="config.js"></script>

@@ -14,6 +14,7 @@
   const connected = /^https?:\/\//.test(apiUrl) && !/PASTE_YOUR/.test(apiUrl);
   const allowDelete = typeof ALLOW_DELETE !== "undefined" && ALLOW_DELETE === true;
   const fcrT = (typeof FCR_THRESHOLDS !== "undefined" && FCR_THRESHOLDS) || null;
+  let sheetUrl = (typeof SHEET_URL === "string" && /^https:\/\//.test(SHEET_URL)) ? SHEET_URL : "";
 
   const state = {
     weights: [], feeds: [], settings: { ...DEFAULTS },
@@ -52,8 +53,13 @@
       }
     };
   }
+  function showSheetLink() {
+    const a = $("sheetLink");
+    if (sheetUrl) { a.href = sheetUrl; a.hidden = false; }
+  }
   function applyData(j, at, fromCache) {
     const d = normalize(j);
+    if (!sheetUrl && typeof j.sheetUrl === "string" && /^https:\/\/docs\.google\.com\//.test(j.sheetUrl)) { sheetUrl = j.sheetUrl; showSheetLink(); }
     state.weights = d.weights; state.feeds = d.feeds; state.settings = d.settings;
     state.updatedAt = at; state.fromCache = !!fromCache; state.loaded = true;
     if (!fromCache) { try { localStorage.setItem(CACHE_KEY, JSON.stringify({ at, data: j })); } catch (_) {} }
@@ -195,7 +201,7 @@
       const d = document.createElement("span"); d.className = "d"; d.textContent = fmtD(w.date);
       const v = document.createElement("span"); v.className = "w"; v.textContent = f1(w.lbs) + " lb";
       li.append(d, v);
-      if (allowDelete) li.appendChild(delBtn("Weighins", w.id));
+      if (allowDelete) li.appendChild(delBtn("Weighins", w.id, w.date));
       wl.appendChild(li);
     });
     const fList = $("feedList"); fList.innerHTML = "";
@@ -207,7 +213,7 @@
       if (f.note) { const n = document.createElement("span"); n.className = "note"; n.textContent = f.note; w.appendChild(n); }
       li.append(d, w);
       if (f.date > c.today) { const t = document.createElement("span"); t.className = "tag"; t.textContent = "Scheduled"; li.appendChild(t); }
-      if (allowDelete) li.appendChild(delBtn("Feed", f.id));
+      if (allowDelete) li.appendChild(delBtn("Feed", f.id, f.date));
       fList.appendChild(li);
     });
 
@@ -215,7 +221,7 @@
     tickUpdated();
   }
 
-  function delBtn(sheet, id) {
+  function delBtn(sheet, id, date) {
     const b = document.createElement("button"); b.className = "del"; b.type = "button"; b.textContent = "Delete";
     let t = null;
     b.onclick = async () => {
@@ -224,7 +230,7 @@
         t = setTimeout(() => { b.classList.remove("arm"); b.textContent = "Delete"; }, 3000); return;
       }
       clearTimeout(t); b.disabled = true; b.textContent = "Deleting…";
-      try { await save("delete", { sheet, id }); }
+      try { await save("delete", { sheet, id, date }); }
       catch (err) { b.disabled = false; b.classList.remove("arm"); b.textContent = "Delete"; alert("Couldn't delete: " + err.message); }
     };
     return b;
@@ -372,7 +378,7 @@
   setInterval(tickUpdated, 30000);
 
   // ---------- boot ----------
-  fillSettings(); render();
+  fillSettings(); render(); showSheetLink();
   if (!connected) {
     $("configBanner").hidden = false; $("refreshBtn").hidden = true; tickUpdated();
   } else {

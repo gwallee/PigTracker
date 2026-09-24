@@ -117,8 +117,35 @@ async function main() {
       await page.click('.seg[data-basis="last"]');
     });
 
-    await check("no delete buttons by default", async () => {
-      assert.equal(await page.locator(".del").count(), 0);
+    await check("sheet link appears from the API response", async () => {
+      await page.waitForFunction(() => !document.getElementById("sheetLink").hidden);
+      assert.equal(await page.getAttribute("#sheetLink", "href"), "https://docs.google.com/spreadsheets/d/mock");
+    });
+
+    await check("delete needs two taps and removes only that row", async () => {
+      assert.equal(await page.locator("#weighList .del").count(), 4);
+      const btn = page.locator("#weighList li").first().locator(".del"); // newest: Sep 21
+      await btn.click();
+      assert.equal((await btn.textContent()).trim(), "Tap to confirm");
+      await page.waitForTimeout(3200); // arm times out
+      assert.equal((await btn.textContent()).trim(), "Delete");
+      assert.equal(await page.locator("#weighList .del").count(), 4);
+      await btn.click(); await btn.click();
+      await page.waitForFunction(() => document.querySelectorAll("#weighList .del").length === 3);
+      const sheet = await (await fetch(BASE + "/__get")).json();
+      assert.deepEqual(sheet.weighins.map(w => w.date).sort(), ["2026-08-30", "2026-09-06", "2026-09-13"]);
+      assert.equal(await page.locator("#periodBody tr").count(), 2);
+      // put it back for the later checks
+      await setDate("wDate", "2026-09-21"); await page.fill("#wLbs", "230"); await page.click("#wBtn"); await page.waitForSelector("#wMsg.ok");
+      await page.waitForFunction(() => document.querySelectorAll("#periodBody tr").length === 3);
+    });
+
+    await check("stale row id with a mismatched date is refused", async () => {
+      const sheet = await (await fetch(BASE + "/__get")).json();
+      const w = sheet.weighins.find(x => x.date === "2026-09-21");
+      const r = await (await fetch(BASE + "/api", { method: "POST", body: JSON.stringify({ action: "delete", sheet: "Weighins", id: w.id, date: "2026-09-13" }) })).json();
+      assert.equal(r.ok, false);
+      assert.equal((await (await fetch(BASE + "/__get")).json()).weighins.length, 4);
     });
 
     await check("390px: no horizontal scroll", async () => {

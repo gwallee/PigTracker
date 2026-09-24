@@ -11,7 +11,7 @@ let sheet = fresh();
 function fresh() { return { settings: { name: "", target: 290, showDate: "2026-12-06" }, feed: [], weighins: [] }; }
 const id = p => p + "_" + Math.random().toString(36).slice(2, 10);
 const isDate = s => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
-const all = () => ({ ok: true, settings: sheet.settings, feed: sheet.feed, weighins: sheet.weighins, serverTime: new Date().toISOString() });
+const all = () => ({ ok: true, settings: sheet.settings, feed: sheet.feed, weighins: sheet.weighins, sheetUrl: "https://docs.google.com/spreadsheets/d/mock", serverTime: new Date().toISOString() });
 
 function handle(body) {
   const num = (v, lo, hi, m) => { const n = +v; if (!Number.isFinite(n) || n < lo || n > hi) throw new Error(m); return Math.round(n * 100) / 100; };
@@ -38,7 +38,7 @@ function handle(body) {
     case "delete": {
       const arr = body.sheet === "Feed" ? sheet.feed : body.sheet === "Weighins" ? sheet.weighins : null;
       if (!arr) throw new Error("sheet must be Feed or Weighins.");
-      const i = arr.findIndex(x => x.id === body.id); if (i < 0) throw new Error("That entry is no longer in the sheet.");
+      const i = arr.findIndex(x => x.id === body.id && (!body.date || x.date === body.date)); if (i < 0) throw new Error("That entry is no longer in the sheet. Refresh and try again.");
       arr.splice(i, 1); break;
     }
     default: throw new Error("Unknown action: " + body.action);

@@ -85,6 +85,7 @@ function readAll_() {
     settings: readSettings_(),
     feed: readFeed_(),
     weighins: readWeighins_(),
+    sheetUrl: SpreadsheetApp.getActive().getUrl(),
     serverTime: new Date().toISOString()
   };
 }
@@ -207,11 +208,17 @@ function deleteRow_(b) {
   var sh = sheet_(name);
   if (!sh) throw new Error("Sheet not found.");
   var idCol = name === SHEET_FEED ? 3 : 2;
+  var date = b.date ? toDateStr_(b.date) : null;
   var rows = rows_(name);
   for (var i = 0; i < rows.length; i++) {
-    if (idFor_(rows[i].v[idCol], rows[i].row) === id) { sh.deleteRow(rows[i].row); return; }
+    if (idFor_(rows[i].v[idCol], rows[i].row) !== id) continue;
+    // Row-number ids can go stale if rows were added or removed since the
+    // page loaded, so double-check the date before deleting anything.
+    if (date && toDateStr_(rows[i].v[0]) !== date) break;
+    sh.deleteRow(rows[i].row);
+    return;
   }
-  throw new Error("That entry is no longer in the sheet.");
+  throw new Error("That entry is no longer in the sheet. Refresh and try again.");
 }
 
 function findByDate_(name, date) {

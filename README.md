@@ -13,7 +13,7 @@ projected show-day weight against your target.
 index.html              page markup and CSS
 app.js                  fetching, caching, forms, rendering, chart
 calc.js                 all the math (periods, feed totals, projection); shared with the tests
-config.js               API_URL, ALLOW_DELETE, FCR_THRESHOLDS  ← the only file you edit
+config.js               API_URL, SHEET_URL, ALLOW_DELETE, FCR_THRESHOLDS  ← the only file you edit
 apps-script/Code.gs     Apps Script source, pasted into the Sheet's script editor
 apps-script/appsscript.json   optional manifest (timezone + web app settings)
 test/                   unit tests, a local mock of the API, and browser acceptance checks
@@ -78,8 +78,9 @@ That's it. The page fetches the Sheet on load, after every save, whenever you re
 - **Change feed amount** records that from a start date onward the pig gets X lb/day. Enter one row each time the amount changes; the page fills in every day in between. A start date in the future is shown as *Scheduled* and kicks in on that date.
 - **Log a weigh-in** records the scale reading for a date, to a tenth of a pound. The projection needs two.
 - **Re-entering a date overwrites** that day's row (feed or weigh-in). That's how you fix a typo from the page.
-- **Everything else is fixed in the Sheet**: change a date, delete a row, paste in history. Tap **Refresh** afterwards. Row order and formatting don't matter. Blank amounts are skipped, not counted as zero.
-- **Undo** is the Sheet's own **File → Version history**. That is why the page has no Delete buttons by default.
+- **Delete** on a weigh-in or feed row asks you to tap twice. It removes that row from the Sheet.
+- **Everything else is fixed in the Sheet**: change a date, paste in history. The **Open sheet** link next to Refresh takes you there. Tap **Refresh** afterwards. Row order and formatting don't matter. Blank amounts are skipped, not counted as zero.
+- **Undo** is the Sheet's own **File → Version history**.
 
 ### How the numbers are computed
 
@@ -96,7 +97,8 @@ Nothing is stored except the raw rows. Everything is recomputed on every load.
 | Flag | Default | What it does |
 |---|---|---|
 | `API_URL` | placeholder | The Apps Script `/exec` URL. Until it's set, the page runs in a preview mode where nothing is saved. |
-| `ALLOW_DELETE` | `false` | Shows two-tap Delete buttons on weigh-ins and feed rows. Off because anyone with the link could wipe data. |
+| `SHEET_URL` | `""` | Adds an **Open sheet** link next to Refresh. Optional: a script deployed from this repo's `Code.gs` already returns the Sheet's URL, so the link appears without setting this. |
+| `ALLOW_DELETE` | `true` | Shows two-tap Delete buttons on weigh-ins and feed rows. Anyone with the page link can use them, so set it to `false` if the link gets around. |
 | `FCR_THRESHOLDS` | `null` | Colour-codes the F:G column and tile, e.g. `{ good: 3.0, mid: 4.0 }`: at or below `good` is green, at or below `mid` amber, above red. |
 
 ---
@@ -115,7 +117,7 @@ node test/e2e.js                  # SPEC §8 acceptance checks in headless Chrom
 
 ### API
 
-`GET  <API_URL>?action=all` → `{ ok, settings:{name,target,showDate}, feed:[{id,date,lbs,note}], weighins:[{id,date,lbs}], serverTime }`
+`GET  <API_URL>?action=all` → `{ ok, settings:{name,target,showDate}, feed:[{id,date,lbs,note}], weighins:[{id,date,lbs}], sheetUrl, serverTime }`
 
 `POST <API_URL>` with a JSON body sent as `Content-Type: text/plain` (avoids a CORS preflight, which Apps Script can't answer):
 
@@ -123,7 +125,7 @@ node test/e2e.js                  # SPEC §8 acceptance checks in headless Chrom
 { "action": "addFeed",      "date": "2026-09-29", "lbs": 4.25, "note": "bump" }
 { "action": "addWeighin",   "date": "2026-09-26", "lbs": 236.5 }
 { "action": "saveSettings", "name": "Hamlet", "target": 290, "showDate": "2026-12-06" }
-{ "action": "delete",       "sheet": "Weighins", "id": "w_1a2b3c4d" }
+{ "action": "delete",       "sheet": "Weighins", "id": "w_1a2b3c4d", "date": "2026-09-26" }
 ```
 
-Every POST returns the same shape as `action=all`, or `{ "ok": false, "error": "..." }`. Writes take a script lock, upsert by date, and validate: weigh-ins 1–1000 lb, feed 0–30 lb/day, notes ≤ 80 characters with leading `=`, `+`, `-`, `@` stripped.
+Every POST returns the same shape as `action=all`, or `{ "ok": false, "error": "..." }`. Writes take a script lock, upsert by date, and validate: weigh-ins 1–1000 lb, feed 0–30 lb/day, notes ≤ 80 characters with leading `=`, `+`, `-`, `@` stripped. A delete whose `date` doesn't match the row is refused, which protects hand-typed rows (id `row:N`) from being deleted by a stale row number.
