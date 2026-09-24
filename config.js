@@ -3,7 +3,7 @@
 
 // Paste the Web app URL from Apps Script → Deploy → Manage deployments.
 // It ends in /exec.
-const API_URL = "PASTE_YOUR_APPS_SCRIPT_URL_HERE";
+const API_URL = "https://script.google.com/macros/s/AKfycbwx5RXtlGUoXkcskkBGxQbqgpFAGqP7nb_6M7TIV6bouUr4jHMKaK0LFTAZN_XnjJyc1g/exec";
 
 // Show Delete buttons on the page. Off by default: anyone with the link
 // could wipe data. Fix mistakes in the Sheet instead (re-entering a date
