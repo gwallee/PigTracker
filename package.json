@@ -1,0 +1,13 @@
+{
+  "name": "show-pig-tracker",
+  "private": true,
+  "description": "Mobile-first tracker for a market show pig's feed and weigh-ins. Static site + Google Sheet.",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "e2e": "node test/e2e.js",
+    "dev": "node test/mock-api.js 8787"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.0"
+  }
+}

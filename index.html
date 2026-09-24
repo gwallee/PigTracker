@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Show Pig Tracker</title>
+<meta name="color-scheme" content="light dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --ground:#F3F6F4; --surface:#FFFFFF; --sunk:#E8EDEA; --line:#D3DBD7;
+  --ink:#18221E; --ink-2:#4B5A54; --ink-3:#7A8983;
+  --ribbon:#1F4FA3; --ribbon-soft:#E3EAF7;
+  --feed:#B8771F; --feed-soft:#F6ECDC;
+  --good:#23794A; --good-soft:#DFF0E6;
+  --warn:#A8650C; --warn-soft:#F8EBD6;
+  --bad:#B23A2E; --bad-soft:#F7E1DE;
+  --btn-ink:#fff;
+  --display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --ground:#0F1412; --surface:#171E1B; --sunk:#1F2824; --line:#2C3833;
+    --ink:#E4EBE7; --ink-2:#AEBCB5; --ink-3:#7E8D86;
+    --ribbon:#86A8F2; --ribbon-soft:#1C2A45;
+    --feed:#E3A956; --feed-soft:#33281A;
+    --good:#5CC48A; --good-soft:#16301F;
+    --warn:#E5A548; --warn-soft:#352812;
+    --bad:#EE8074; --bad-soft:#3A1D1A;
+    --btn-ink:#111;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --ground:#0F1412; --surface:#171E1B; --sunk:#1F2824; --line:#2C3833;
+  --ink:#E4EBE7; --ink-2:#AEBCB5; --ink-3:#7E8D86;
+  --ribbon:#86A8F2; --ribbon-soft:#1C2A45;
+  --feed:#E3A956; --feed-soft:#33281A;
+  --good:#5CC48A; --good-soft:#16301F;
+  --warn:#E5A548; --warn-soft:#352812;
+  --bad:#EE8074; --bad-soft:#3A1D1A;
+  --btn-ink:#111;
+}
+*{box-sizing:border-box}
+html{overflow-x:hidden}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.45;padding:20px 16px 48px}
+.wrap{max-width:980px;margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr);gap:18px}
+.wrap>*,.proj>*,.forms>*,.lists>*{min-width:0}
+h1,h2,h3{font-family:var(--display);margin:0;text-wrap:balance;letter-spacing:.01em}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.label{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3);font-weight:600}
+
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px}
+header h1{font-size:38px;font-weight:700;line-height:1}
+header .sub{color:var(--ink-2);margin-top:4px}
+.countdown{display:flex;align-items:baseline;gap:8px;background:var(--ribbon);color:var(--btn-ink);padding:8px 14px;border-radius:6px}
+.countdown b{font-family:var(--display);font-size:30px;line-height:1}
+.countdown span{font-size:13px;opacity:.9}
+.meta{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:-6px;font-size:13px;color:var(--ink-3)}
+.refresh{font:inherit;font-size:14px;font-weight:600;color:var(--ribbon);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 14px;min-height:40px;cursor:pointer;touch-action:manipulation}
+.refresh[disabled]{opacity:.6;cursor:default}
+
+.banner{background:var(--feed-soft);color:var(--ink);border:1px dashed var(--feed);border-radius:8px;padding:10px 14px;font-size:14px;overflow-wrap:anywhere}
+.banner.bad{background:var(--bad-soft);border-color:var(--bad)}
+.banner[hidden]{display:none}
+.banner code{font-family:var(--mono);font-size:13px}
+
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px}
+.panel h2{font-size:22px;font-weight:600;margin-bottom:12px}
+
+/* projection hero */
+.proj{display:grid;grid-template-columns:1.2fr 1fr;gap:18px;align-items:center}
+@media (max-width:680px){.proj{grid-template-columns:1fr}}
+.proj-big{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.proj-big .val{font-family:var(--display);font-size:64px;font-weight:700;line-height:.95}
+.proj-big .unit{font-family:var(--display);font-size:24px;color:var(--ink-2)}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;font-weight:600;font-size:13px}
+.pill.good{background:var(--good-soft);color:var(--good)}
+.pill.warn{background:var(--warn-soft);color:var(--warn)}
+.pill.bad{background:var(--bad-soft);color:var(--bad)}
+.pill.none{background:var(--sunk);color:var(--ink-2)}
+.proj p{margin:8px 0 0;color:var(--ink-2);max-width:60ch}
+.need{display:grid;gap:10px;background:var(--sunk);border-radius:8px;padding:14px}
+.need-row{display:flex;justify-content:space-between;gap:12px;align-items:baseline}
+.need-row .num{font-size:18px;font-weight:500}
+.need small{color:var(--ink-3);font-size:12px}
+.basis{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
+.seg{border:1px solid var(--line);background:var(--surface);color:var(--ink-2);font:inherit;font-size:13px;padding:4px 10px;border-radius:6px;cursor:pointer;min-height:36px}
+.seg[aria-pressed="true"]{background:var(--ribbon);border-color:var(--ribbon);color:var(--btn-ink)}
+
+/* stats */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+@media (max-width:680px){.stats{grid-template-columns:repeat(2,1fr)}}
+.stat{background:var(--surface);padding:14px 16px;display:grid;gap:4px}
+.stat .v{font-family:var(--display);font-size:30px;font-weight:600;line-height:1}
+.stat .v small{font-size:16px;color:var(--ink-3);font-weight:500;margin-left:3px}
+.stat .d{font-size:13px;color:var(--ink-3)}
+.stat.feed .v{color:var(--feed)}
+
+/* chart */
+.chart-box{overflow:hidden}
+svg.chart{width:100%;height:auto;display:block}
+svg.chart text{font-family:var(--mono);font-size:11px;fill:var(--ink-3)}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:13px;color:var(--ink-2);margin-top:8px}
+.legend i{display:inline-block;width:18px;height:3px;vertical-align:middle;margin-right:6px;border-radius:2px}
+
+/* forms */
+.forms{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.section-h{font-size:26px;font-weight:700;margin-top:6px}
+@media (max-width:680px){.forms{grid-template-columns:minmax(0,1fr)}}
+form{display:grid;gap:12px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+label.f{display:grid;gap:4px;font-size:13px;color:var(--ink-2);font-weight:500}
+input{font:inherit;font-size:16px;min-height:46px;color:var(--ink);background:var(--ground);border:1px solid var(--line);border-radius:6px;padding:9px 10px;width:100%;min-width:0}
+input:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid var(--ribbon);outline-offset:2px}
+.btn{font:inherit;font-size:16px;font-weight:600;border:0;border-radius:8px;padding:12px 14px;min-height:48px;cursor:pointer;color:var(--btn-ink);touch-action:manipulation}
+.btn[disabled]{opacity:.6;cursor:default}
+.btn.weigh{background:var(--ribbon)}
+.btn.feedb{background:var(--feed)}
+.hint{font-size:13px;color:var(--ink-3);margin:0}
+.msg{font-size:13px;min-height:18px;margin:0}
+.msg.ok{color:var(--good)} .msg.err{color:var(--bad)}
+
+/* tables */
+.tbl-box{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:right;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{text-align:right;padding:9px 10px;border-bottom:1px solid var(--sunk);font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+td.txt{font-family:var(--body)}
+tr.latest td{background:var(--ribbon-soft)}
+.fcr-good{color:var(--good)} .fcr-mid{color:var(--warn)} .fcr-bad{color:var(--bad)}
+.empty{color:var(--ink-3);font-size:14px;padding:6px 0}
+
+.lists{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media (max-width:680px){.lists{grid-template-columns:minmax(0,1fr)}}
+ul.log{list-style:none;margin:0;padding:0;display:grid}
+ul.log li{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--sunk)}
+ul.log li.empty{border:0}
+ul.log .d{font-family:var(--mono);font-size:13px;color:var(--ink-2);width:92px;flex:none}
+ul.log .w{font-family:var(--mono);font-weight:500;flex:1;min-width:0}
+ul.log .tag,ul.log .del{flex:none}
+ul.log .note{font-family:var(--body);font-weight:400;color:var(--ink-3);font-size:13px;margin-left:6px;overflow-wrap:anywhere}
+.tag{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;padding:2px 7px;border-radius:4px;background:var(--feed-soft);color:var(--feed)}
+.del{font:inherit;font-size:13px;background:none;border:1px solid var(--line);color:var(--ink-3);border-radius:6px;padding:8px 12px;min-height:36px;cursor:pointer}
+.del.arm{border-color:var(--bad);color:var(--bad);background:var(--bad-soft)}
+
+details.settings summary{cursor:pointer;font-family:var(--display);font-size:20px;font-weight:600;min-height:44px;display:flex;align-items:center}
+details.settings form{margin-top:12px}
+.row3{display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px}
+@media (max-width:560px){.row3{grid-template-columns:1fr}}
+.foot{color:var(--ink-3);font-size:12px;text-align:center}
+.foot a{color:inherit}
+@media (max-width:560px){
+  body{padding-top:14px}
+  header h1{font-size:32px}
+  .countdown{padding:6px 12px}.countdown b{font-size:24px}
+  .panel{padding:14px}
+  .panel h2{font-size:20px;margin-bottom:10px}
+  .proj-big .val{font-size:52px}
+  .stat{padding:12px}.stat .v{font-size:26px}
+  .basis .seg{flex:1 1 auto;padding:8px 10px}
+  .hide-sm{display:none}
+  th,td{padding:8px 6px}
+  ul.log .d{width:64px}
+}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+</head><body>
+
+<div class="wrap">
+  <header>
+    <div>
+      <div class="label">Show pig</div>
+      <h1 id="pigName">Show Pig</h1>
+      <div class="sub" id="headSub">Target 290 lb · Show Dec 6, 2026</div>
+    </div>
+    <div class="countdown"><b id="daysLeft" class="num">—</b><span id="daysLeftLabel">days to show</span></div>
+  </header>
+
+  <div class="meta">
+    <span id="updated" aria-live="polite">Loading…</span>
+    <button class="refresh" type="button" id="refreshBtn">Refresh</button>
+  </div>
+
+  <div class="banner" id="configBanner" hidden><b>Not connected to a sheet yet.</b> Set <code>API_URL</code> in <code>config.js</code> to your Apps Script web app URL. Until then, entries stay in this browser tab only.</div>
+  <div class="banner bad" id="netBanner" hidden></div>
+
+  <section class="forms">
+    <div class="panel">
+      <h2>Change feed amount</h2>
+      <form id="feedForm" novalidate>
+        <div class="row">
+          <label class="f">Starting on<input type="date" id="fDate" required></label>
+          <label class="f">Lb per day<input type="number" id="fLbs" step="0.05" min="0" max="30" inputmode="decimal" placeholder="e.g. 4.25" required></label>
+        </div>
+        <label class="f">Note (optional)<input type="text" id="fNote" maxlength="80" placeholder="e.g. switched to finisher ration"></label>
+        <button class="btn feedb" type="submit" id="fBtn">Save feed change</button>
+        <p class="msg" id="fMsg" aria-live="polite"></p>
+      </form>
+    </div>
+    <div class="panel">
+      <h2>Log a weigh-in</h2>
+      <form id="weighForm" novalidate>
+        <div class="row">
+          <label class="f">Date<input type="date" id="wDate" required></label>
+          <label class="f">Weight (lb)<input type="number" id="wLbs" step="0.1" min="1" max="1000" inputmode="decimal" placeholder="e.g. 212.5" required></label>
+        </div>
+        <button class="btn weigh" type="submit" id="wBtn">Save weigh-in</button>
+        <p class="msg" id="wMsg" aria-live="polite"></p>
+      </form>
+    </div>
+  </section>
+
+  <h2 class="section-h">Progress</h2>
+
+  <section class="panel">
+    <div class="proj">
+      <div>
+        <div class="label">Projected show weight · <span id="projDate">Dec 6</span></div>
+        <div class="proj-big"><span class="val num" id="projVal">—</span><span class="unit">lb</span><span class="pill none" id="projPill">Need 2 weigh-ins</span></div>
+        <p id="projText">Log at least two weigh-ins to project the show weight.</p>
+        <div class="basis" role="group" aria-label="Projection based on">
+          <button class="seg" type="button" data-basis="last" aria-pressed="true">Last period gain</button>
+          <button class="seg" type="button" data-basis="recent" aria-pressed="false">Last 3 weigh-ins</button>
+          <button class="seg" type="button" data-basis="all" aria-pressed="false">Since first weigh-in</button>
+        </div>
+      </div>
+      <div class="need">
+        <div class="label">To hit <span id="needTarget">290</span> lb</div>
+        <div class="need-row"><span>Gain still needed</span><span class="num" id="needGain">—</span></div>
+        <div class="need-row"><span>Required daily gain</span><span class="num" id="needAdg">—</span></div>
+        <div class="need-row"><span>Current daily gain</span><span class="num" id="curAdg">—</span></div>
+        <div class="need-row"><span>Est. feed / day at current F:G</span><span class="num" id="needFeed">—</span></div>
+        <small>Feed estimate = required daily gain × latest feed conversion. A starting point, not a ration.</small>
+      </div>
+    </div>
+  </section>
+
+  <section class="stats">
+    <div class="stat"><span class="label">Current weight</span><span class="v num" id="sWeight">—</span><span class="d" id="sWeightD">No weigh-ins yet</span></div>
+    <div class="stat"><span class="label">Last period gain</span><span class="v num" id="sGain">—</span><span class="d" id="sGainD">—</span></div>
+    <div class="stat"><span class="label">Feed : gain</span><span class="v num" id="sFcr">—</span><span class="d" id="sFcrD">lb feed per lb gain</span></div>
+    <div class="stat feed"><span class="label">Feeding now</span><span class="v num" id="sFeed">—</span><span class="d" id="sFeedD">No feed amount set</span></div>
+  </section>
+
+  <section class="panel">
+    <h2>Weight curve</h2>
+    <div class="chart-box"><svg class="chart" id="chart" viewBox="0 0 720 300" role="img" aria-label="Weight over time with projection to show date"></svg></div>
+    <div class="legend">
+      <span><i style="background:var(--ink)"></i>Weigh-ins</span>
+      <span><i style="background:var(--ribbon)"></i>Projection</span>
+      <span><i style="background:var(--good)"></i>Target</span>
+      <span><i style="background:var(--feed)"></i>Feed lb/day</span>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Weigh periods</h2>
+    <p class="hint" style="margin:-4px 0 10px">Feed is totaled day by day from your feed schedule, from one weigh-in up to the next. Lower feed : gain is better.</p>
+    <div class="tbl-box">
+      <table>
+        <thead><tr><th>Period</th><th class="hide-sm">Days</th><th class="hide-sm">Start</th><th class="hide-sm">End</th><th>Gain</th><th>Lb/day</th><th>Feed</th><th>F:G</th></tr></thead>
+        <tbody id="periodBody"></tbody>
+      </table>
+    </div>
+    <div class="empty" id="periodEmpty" hidden>Periods appear after your second weigh-in.</div>
+  </section>
+
+  <section class="lists">
+    <div class="panel">
+      <h2>Weigh-ins</h2>
+      <ul class="log" id="weighList"></ul>
+    </div>
+    <div class="panel">
+      <h2>Feed schedule</h2>
+      <ul class="log" id="feedList"></ul>
+    </div>
+  </section>
+
+  <section class="panel">
+    <details class="settings">
+      <summary>Pig &amp; show settings</summary>
+      <form id="setForm" novalidate>
+        <div class="row3">
+          <label class="f">Pig's name<input type="text" id="sName" maxlength="40" placeholder="Show Pig"></label>
+          <label class="f">Target (lb)<input type="number" id="sTarget" step="1" min="1" max="1000" inputmode="numeric" required></label>
+          <label class="f">Show date<input type="date" id="sShow" required></label>
+        </div>
+        <button class="btn weigh" type="submit" id="sBtn">Save settings</button>
+        <p class="msg" id="sMsg" aria-live="polite"></p>
+      </form>
+    </details>
+  </section>
+
+  <div class="foot">Data lives in your Google Sheet. Fix a mistake there, or re-enter the same date to overwrite it.</div>
+</div>
+
+<script src="config.js"></script>
+<script src="calc.js"></script>
+<script src="app.js"></script>
+</body></html>
