@@ -7,7 +7,7 @@ const API_URL = "https://script.google.com/macros/s/AKfycbwx5RXtlGUoXkcskkBGxQbq
 
 // Link to the Google Sheet, shown next to the Refresh button so you can
 // fix or remove entries by hand. Leave "" to hide the link.
-const SHEET_URL = "";
+const SHEET_URL = "https://docs.google.com/spreadsheets/d/1g9cRvGS8c2cNWKHrEjAyjeVWy2Exb9CVlp9LWIPDgws/edit";
 
 // Show Delete buttons (two taps to confirm) on weigh-ins and feed rows.
 // Anyone with the page link can use them, so if the link ever gets
