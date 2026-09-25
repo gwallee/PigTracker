@@ -117,9 +117,9 @@ async function main() {
       await page.click('.seg[data-basis="last"]');
     });
 
-    await check("sheet link appears from the API response", async () => {
+    await check("sheet link appears (from config.js, or the API response as fallback)", async () => {
       await page.waitForFunction(() => !document.getElementById("sheetLink").hidden);
-      assert.equal(await page.getAttribute("#sheetLink", "href"), "https://docs.google.com/spreadsheets/d/mock");
+      assert.match(await page.getAttribute("#sheetLink", "href"), /^https:\/\/docs\.google\.com\/spreadsheets\//);
     });
 
     await check("delete needs two taps and removes only that row", async () => {
