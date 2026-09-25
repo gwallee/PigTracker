@@ -71,6 +71,8 @@ test/                   unit tests, a local mock of the API, and browser accepta
 
 That's it. The page fetches the Sheet on load, after every save, whenever you return to the tab, and when you tap **Refresh**.
 
+**After changing the site's code**, bump the `?v=` number on the three `<script>` tags at the bottom of `index.html`. Browsers (phones especially) cache the old files otherwise, and a new version number forces them to fetch the new ones.
+
 ---
 
 ## Using it
