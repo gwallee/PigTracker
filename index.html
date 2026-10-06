@@ -104,6 +104,17 @@ header .sub{color:var(--ink-2);margin-top:4px}
 .chart-box{overflow:hidden}
 svg.chart{width:100%;height:auto;display:block}
 svg.chart text{font-family:var(--mono);font-size:11px;fill:var(--ink-3)}
+.chart-head{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px 12px;margin-bottom:12px}
+.chart-head h2{margin-bottom:0}
+.basis.range{margin-top:0}
+.readout{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;min-height:40px;margin-top:8px;padding:8px 12px;border-radius:8px;background:var(--sunk);font-size:14px;color:var(--ink-2)}
+.readout .hint{color:var(--ink-3);font-size:13px}
+.readout b{font-family:var(--display);font-size:22px;color:var(--ink);font-weight:600;line-height:1}
+.readout .when{color:var(--ink);font-weight:600}
+.readout .sep{color:var(--ink-3)}
+svg.chart .hit{fill:transparent;cursor:pointer;outline:none}
+svg.chart .hit:focus-visible + .focus-ring{display:block}
+svg.chart .focus-ring{display:none;fill:none;stroke:var(--ribbon);stroke-width:2;pointer-events:none}
 .legend{display:flex;flex-wrap:wrap;gap:14px;font-size:13px;color:var(--ink-2);margin-top:8px}
 .legend i{display:inline-block;width:18px;height:3px;vertical-align:middle;margin-right:6px;border-radius:2px}
 
@@ -156,6 +167,9 @@ details.settings form{margin-top:12px}
 .foot a{color:inherit}
 @media (max-width:560px){
   body{padding-top:14px}
+  .chart-head{display:grid}
+  .readout .sep{display:none}
+  .readout{gap:4px 12px}
   header h1{font-size:32px}
   .countdown{padding:6px 12px}.countdown b{font-size:24px}
   .panel{padding:14px}
@@ -251,8 +265,16 @@ details.settings form{margin-top:12px}
   </section>
 
   <section class="panel">
-    <h2>Weight curve</h2>
+    <div class="chart-head">
+      <h2>Weight curve</h2>
+      <div class="basis range" role="group" aria-label="Chart range">
+        <button class="seg" type="button" data-range="all" aria-pressed="true">To show day</button>
+        <button class="seg" type="button" data-range="6" aria-pressed="false">Last 6</button>
+        <button class="seg" type="button" data-range="3" aria-pressed="false">Last 3</button>
+      </div>
+    </div>
     <div class="chart-box"><svg class="chart" id="chart" viewBox="0 0 720 300" role="img" aria-label="Weight over time with projection to show date"></svg></div>
+    <div class="readout" id="readout" aria-live="polite"><span class="hint">Tap a weigh-in on the chart for its details.</span></div>
     <div class="legend">
       <span><i style="background:var(--ink)"></i>Weigh-ins</span>
       <span><i style="background:var(--ribbon)"></i>Projection</span>
@@ -299,10 +321,10 @@ details.settings form{margin-top:12px}
     </details>
   </section>
 
-  <div class="foot" id="foot">Data lives in your Google Sheet. Re-enter a date to overwrite it, or fix it in the sheet. Undo is the sheet's version history. · Tracker v5</div>
+  <div class="foot" id="foot">Data lives in your Google Sheet. Re-enter a date to overwrite it, or fix it in the sheet. Undo is the sheet's version history. · Tracker v6</div>
 </div>
 
-<script src="config.js?v=5"></script>
-<script src="calc.js?v=5"></script>
-<script src="app.js?v=5"></script>
+<script src="config.js?v=6"></script>
+<script src="calc.js?v=6"></script>
+<script src="app.js?v=6"></script>
 </body></html>

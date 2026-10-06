@@ -148,6 +148,40 @@ async function main() {
       assert.equal((await (await fetch(BASE + "/__get")).json()).weighins.length, 4);
     });
 
+    await check("chart: tapping a weigh-in shows its details, tapping again clears", async () => {
+      const hits = page.locator("#chart .hit");
+      assert.equal(await hits.count(), 4);
+      await hits.nth(3).click(); // Sep 21, 230.0
+      const txt = await page.textContent("#readout");
+      assert.match(txt, /230\.0 lb/); assert.match(txt, /Sep 21, 2026/); assert.match(txt, /\+6\.5 lb since Sep 13 \(8 days\)/);
+      assert.match(txt, /0\.81 lb\/day/); assert.match(txt, /33\.3 lb feed/); assert.match(txt, /F:G 5\.12/);
+      assert.match(await page.getAttribute("#chart .hit >> nth=3", "aria-label"), /selected/);
+      await hits.nth(0).click();
+      assert.match(await page.textContent("#readout"), /212\.0 lb.*First weigh-in/);
+      await hits.nth(0).click();
+      assert.match(await page.textContent("#readout"), /Tap a weigh-in/);
+      // keyboard
+      await hits.nth(1).focus(); await page.keyboard.press("Enter");
+      assert.match(await page.textContent("#readout"), /218\.0 lb/);
+      await page.click("#chart", { position: { x: 5, y: 5 } });
+      assert.match(await page.textContent("#readout"), /Tap a weigh-in/);
+    });
+
+    await check("chart: zoom toggle tightens the axes and persists", async () => {
+      const axisMax = async () => Math.max(...(await page.$$eval("#chart text", ts => ts.map(t => +t.textContent).filter(n => !isNaN(n) && n > 50))));
+      const fullMax = await axisMax();
+      assert.ok(fullMax >= 290, "full view frames the target, got " + fullMax);
+      await page.click('.seg[data-range="3"]');
+      const zoomMax = await axisMax();
+      assert.ok(zoomMax < 240 && zoomMax >= 230, "zoomed y-axis should frame 218–230, got " + zoomMax);
+      assert.equal(await page.locator("#chart .hit").count(), 3);
+      await page.reload(); await page.waitForFunction(() => /^Updated/.test(document.getElementById("updated").textContent));
+      assert.equal(await page.getAttribute('.seg[data-range="3"]', "aria-pressed"), "true");
+      await page.click('.seg[data-range="6"]');
+      assert.equal(await page.locator("#chart .hit").count(), 4);
+      await page.click('.seg[data-range="all"]');
+    });
+
     await check("390px: no horizontal scroll", async () => {
       const m = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth, bw: document.body.scrollWidth }));
       assert.ok(m.sw <= m.cw, `scrollWidth ${m.sw} > clientWidth ${m.cw}`);

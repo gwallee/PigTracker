@@ -84,6 +84,11 @@ That's it. The page fetches the Sheet on load, after every save, whenever you re
 - **Everything else is fixed in the Sheet**: change a date, paste in history. The **Open sheet** link next to Refresh takes you there. Tap **Refresh** afterwards. Row order and formatting don't matter. Blank amounts are skipped, not counted as zero.
 - **Undo** is the Sheet's own **File → Version history**.
 
+### Reading the chart
+
+- **To show day / Last 6 / Last 3** above the chart set the range. The zoomed views tighten the vertical scale to those weigh-ins, so a few pounds of difference becomes visible. The choice is remembered on that device.
+- **Tap a weigh-in point** to highlight it and show its details under the chart: weight, date, gain and days since the previous weigh-in, lb/day, feed for that period and feed : gain. Tap it again, or tap empty chart space, to clear. The points are keyboard reachable too (Tab, then Enter).
+
 ### How the numbers are computed
 
 Nothing is stored except the raw rows. Everything is recomputed on every load.

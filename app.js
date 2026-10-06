@@ -6,7 +6,7 @@
   "use strict";
   const { todayStr, days, addDays, calc, isDateStr } = PigCalc;
   const DEFAULTS = { name: "", target: 290, showDate: "2026-12-06" };
-  const CACHE_KEY = "pigtracker.cache.v1", BASIS_KEY = "pigtracker.basis";
+  const CACHE_KEY = "pigtracker.cache.v1", BASIS_KEY = "pigtracker.basis", RANGE_KEY = "pigtracker.range";
 
   // ?api=http://localhost:8787/api overrides config.js (used by the tests).
   const apiOverride = new URLSearchParams(location.search).get("api");
@@ -18,9 +18,11 @@
 
   const state = {
     weights: [], feeds: [], settings: { ...DEFAULTS },
-    basis: "last", updatedAt: null, fromCache: false, loaded: false, busy: false
+    basis: "last", range: "all", selected: null, hover: null,
+    updatedAt: null, fromCache: false, loaded: false, busy: false
   };
   try { const b = localStorage.getItem(BASIS_KEY); if (["last", "recent", "all"].includes(b)) state.basis = b; } catch (_) {}
+  try { const r = localStorage.getItem(RANGE_KEY); if (["all", "6", "3"].includes(r)) state.range = r; } catch (_) {}
 
   // ---------- formatting ----------
   const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -149,7 +151,8 @@
       $("projVal").textContent = "—"; pill.className = "pill none"; pill.textContent = "Need 2 weigh-ins";
       $("projText").textContent = "Log at least two weigh-ins to project the show weight.";
     }
-    document.querySelectorAll(".seg").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.basis === state.basis)));
+    document.querySelectorAll(".seg[data-basis]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.basis === state.basis)));
+    document.querySelectorAll(".seg[data-range]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.range === state.range)));
 
     if (c.last && c.daysToShow > 0) {
       const g = s.target - c.last.lbs;
@@ -237,73 +240,118 @@
   }
 
   // ---------- chart ----------
+  let lastCalc = null;
+  function pickStep(span, targets) { for (const t of targets) if (span / t <= 6) return t; return targets[targets.length - 1]; }
+
   function drawChart(c) {
+    lastCalc = c;
     const svg = $("chart"), s = state.settings;
     const W = Math.max(300, Math.round(svg.parentNode.clientWidth || 720)), narrow = W < 520;
     const L = narrow ? 36 : 46, R = 12, T = 14, PB = narrow ? 190 : 210, FT = PB + 24, FB = PB + 60, XA = PB + 80;
     svg.setAttribute("viewBox", "0 0 " + W + " " + (XA + 8));
     const NS = "http://www.w3.org/2000/svg";
     svg.innerHTML = "";
-    const el = (tag, attrs, txt) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (txt != null) e.textContent = txt; svg.appendChild(e); return e; };
+    const el = (tag, attrs, txt, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (txt != null) e.textContent = txt; (parent || svg).appendChild(e); return e; };
     if (!c.W.length) {
       el("text", { x: W / 2, y: 150, "text-anchor": "middle" }, "Your weight curve appears after the first weigh-in");
+      updateReadout();
       return;
     }
-    const start = c.W[0].date;
-    const end = s.showDate > c.today ? addDays(s.showDate, 2) : addDays(c.today, 2);
+    // ----- range
+    const zoomN = state.range === "all" ? 0 : Math.min(+state.range, c.W.length);
+    const vis = zoomN ? c.W.slice(-zoomN) : c.W;
+    let start, end;
+    if (zoomN) {
+      start = vis[0].date;
+      const tail = c.today > c.last.date ? c.today : c.last.date;
+      const pad = Math.max(2, Math.round(days(start, tail) * 0.15));
+      start = addDays(start, -Math.max(1, Math.round(pad / 2))); end = addDays(tail, pad);
+    } else {
+      start = c.W[0].date;
+      end = s.showDate > c.today ? addDays(s.showDate, 2) : addDays(c.today, 2);
+    }
     const span = Math.max(1, days(start, end));
     const X = d => L + (days(start, d) / span) * (W - L - R);
+    const inX = d => d >= start && d <= end;
 
-    const ys = [...c.W.map(w => w.lbs), s.target]; if (c.proj != null) ys.push(c.proj);
+    // ----- y scale: whole run frames target + projection; zoom frames only the visible weigh-ins
+    const ys = vis.map(w => w.lbs);
+    if (!zoomN) { ys.push(s.target); if (c.proj != null) ys.push(c.proj); }
     let lo = Math.min(...ys), hi = Math.max(...ys);
-    const step = (hi - lo) > 120 ? 40 : (hi - lo) > 50 ? 20 : 10;
-    lo = Math.floor((lo - 5) / step) * step; hi = Math.ceil((hi + 5) / step) * step;
+    const step = pickStep(Math.max(1, hi - lo), [1, 2, 5, 10, 20, 40, 100]);
+    const margin = zoomN ? step * 0.6 : 5;
+    lo = Math.floor((lo - margin) / step) * step; hi = Math.ceil((hi + margin) / step) * step;
+    if (hi === lo) hi = lo + step;
     const Y = v => PB - (v - lo) / (hi - lo) * (PB - T);
+    const inY = v => v >= lo && v <= hi;
+
+    // clip for anything that may run past the plot edges when zoomed
+    const defs = el("defs", {}); const cp = el("clipPath", { id: "plotClip" }, null, defs);
+    el("rect", { x: L, y: 0, width: W - L - R, height: FB + 1 }, null, cp);
+    const plot = el("g", { "clip-path": "url(#plotClip)" });
 
     const line = "var(--line)", ink3 = "var(--ink-3)";
-    for (let v = lo; v <= hi; v += step) {
+    for (let v = lo; v <= hi + 1e-9; v += step) {
       el("line", { x1: L, x2: W - R, y1: Y(v), y2: Y(v), stroke: line, "stroke-width": 1 });
-      el("text", { x: L - 8, y: Y(v) + 4, "text-anchor": "end" }, v);
+      el("text", { x: L - 8, y: Y(v) + 4, "text-anchor": "end" }, Number.isInteger(step) ? Math.round(v) : v.toFixed(1));
     }
-    const maxTicks = Math.max(3, Math.floor((W - L - R) / 62)); let every = 7; while (span / every > maxTicks) every += 7;
-    for (let k = 0; k <= span; k += every) {
+    const maxTicks = Math.max(3, Math.floor((W - L - R) / 62));
+    let every = [1, 2, 3, 7, 14, 21, 28, 35, 42, 56, 70, 84].find(e => span / e <= maxTicks) || 84;
+    const tick0 = every >= 7 ? 0 : 0;
+    for (let k = tick0; k <= span; k += every) {
       const d = addDays(start, k);
       el("line", { x1: X(d), x2: X(d), y1: T, y2: FB, stroke: line, "stroke-width": 1, "stroke-dasharray": "2 4" });
       el("text", { x: X(d), y: XA, "text-anchor": "middle" }, fmtD(d));
     }
-    if (c.today >= start && c.today <= end) {
+    if (inX(c.today)) {
       el("line", { x1: X(c.today), x2: X(c.today), y1: T, y2: FB, stroke: ink3, "stroke-width": 1 });
       el("text", { x: X(c.today) + 4, y: T + 10, "text-anchor": "start" }, "today");
     }
-    // target
-    el("line", { x1: L, x2: W - R, y1: Y(s.target), y2: Y(s.target), stroke: "var(--good)", "stroke-width": 1.5, "stroke-dasharray": "6 4" });
-    if (s.showDate >= start && s.showDate <= end) {
-      el("circle", { cx: X(s.showDate), cy: Y(s.target), r: 6, fill: "var(--surface)", stroke: "var(--good)", "stroke-width": 2.5 });
-      el("text", { x: X(s.showDate) - 10, y: Y(s.target) - 10, "text-anchor": "end" }, s.target + " lb target").style.fill = "var(--good)";
-    } else {
-      el("text", { x: W - R, y: Y(s.target) - 6, "text-anchor": "end" }, s.target + " lb target").style.fill = "var(--good)";
+    // ----- target
+    if (inY(s.target)) {
+      el("line", { x1: L, x2: W - R, y1: Y(s.target), y2: Y(s.target), stroke: "var(--good)", "stroke-width": 1.5, "stroke-dasharray": "6 4" });
+      if (inX(s.showDate)) {
+        el("circle", { cx: X(s.showDate), cy: Y(s.target), r: 6, fill: "var(--surface)", stroke: "var(--good)", "stroke-width": 2.5 });
+        el("text", { x: X(s.showDate) - 10, y: Y(s.target) - 10, "text-anchor": "end" }, s.target + " lb target").style.fill = "var(--good)";
+      } else {
+        el("text", { x: W - R, y: Y(s.target) - 6, "text-anchor": "end" }, s.target + " lb target").style.fill = "var(--good)";
+      }
     }
-    // projection
+    // ----- projection (clipped when zoomed)
     if (c.proj != null) {
-      el("line", { x1: X(c.last.date), y1: Y(c.last.lbs), x2: X(s.showDate), y2: Y(c.proj), stroke: "var(--ribbon)", "stroke-width": 2.5, "stroke-dasharray": "7 5" });
-      el("circle", { cx: X(s.showDate), cy: Y(c.proj), r: 5, fill: "var(--ribbon)" });
-      const pl = el("text", { x: X(s.showDate) - 10, y: Y(c.proj) + (c.proj >= s.target ? -10 : 18), "text-anchor": "end" }, f1(c.proj) + " projected");
-      pl.style.fill = "var(--ribbon)";
-      if (Math.abs(Y(c.proj) - Y(s.target)) < 16) pl.setAttribute("y", c.proj >= s.target ? Y(s.target) - 24 : Y(s.target) + 30);
+      el("line", { x1: X(c.last.date), y1: Y(c.last.lbs), x2: X(s.showDate), y2: Y(c.proj), stroke: "var(--ribbon)", "stroke-width": 2.5, "stroke-dasharray": "7 5" }, null, plot);
+      if (!zoomN) {
+        el("circle", { cx: X(s.showDate), cy: Y(c.proj), r: 5, fill: "var(--ribbon)" });
+        const pl = el("text", { x: X(s.showDate) - 10, y: Y(c.proj) + (c.proj >= s.target ? -10 : 18), "text-anchor": "end" }, f1(c.proj) + " projected");
+        pl.style.fill = "var(--ribbon)";
+        if (Math.abs(Y(c.proj) - Y(s.target)) < 16) pl.setAttribute("y", c.proj >= s.target ? Y(s.target) - 24 : Y(s.target) + 30);
+      }
     }
-    // weights
+    // ----- weights
     const pts = c.W.map(w => X(w.date) + "," + Y(w.lbs));
     if (c.W.length > 1) {
-      el("polygon", { points: X(c.W[0].date) + "," + PB + " " + pts.join(" ") + " " + X(c.last.date) + "," + PB, fill: "var(--ink)", "fill-opacity": .06 });
-      el("polyline", { points: pts.join(" "), fill: "none", stroke: "var(--ink)", "stroke-width": 2.5, "stroke-linejoin": "round" });
+      el("polygon", { points: X(c.W[0].date) + "," + PB + " " + pts.join(" ") + " " + X(c.last.date) + "," + PB, fill: "var(--ink)", "fill-opacity": .06 }, null, plot);
+      el("polyline", { points: pts.join(" "), fill: "none", stroke: "var(--ink)", "stroke-width": 2.5, "stroke-linejoin": "round" }, null, plot);
     }
+    const selDate = state.selected, hovDate = state.hover;
     c.W.forEach((w, i) => {
-      const isLast = i === c.W.length - 1;
-      el("circle", { cx: X(w.date), cy: Y(w.lbs), r: isLast ? 5.5 : 4, fill: isLast ? "var(--ink)" : "var(--surface)", stroke: "var(--ink)", "stroke-width": 2 });
+      if (!inX(w.date)) return;
+      const isLast = i === c.W.length - 1, isSel = w.date === selDate, isHov = w.date === hovDate && !selDate;
+      const x = X(w.date), y = Y(w.lbs);
+      if (isSel || isHov) el("line", { x1: x, x2: x, y1: T, y2: PB, stroke: "var(--ribbon)", "stroke-width": 1, "stroke-dasharray": isSel ? "" : "3 3" });
+      if (isSel) el("circle", { cx: x, cy: y, r: 10, fill: "var(--ribbon)", "fill-opacity": .18 });
+      el("circle", { cx: x, cy: y, r: isLast || isSel ? 5.5 : 4, fill: isLast || isSel ? "var(--ink)" : "var(--surface)", stroke: isSel ? "var(--ribbon)" : "var(--ink)", "stroke-width": isSel ? 2.5 : 2 });
     });
-    el("text", { x: X(c.last.date), y: Y(c.last.lbs) - 12, "text-anchor": "middle" }, f1(c.last.lbs)).style.fill = "var(--ink)";
+    if (inX(c.last.date) && c.last.date !== selDate) el("text", { x: X(c.last.date), y: Y(c.last.lbs) - 12, "text-anchor": "middle" }, f1(c.last.lbs)).style.fill = "var(--ink)";
+    if (selDate) {
+      const w = c.W.find(p => p.date === selDate);
+      if (w && inX(w.date)) {
+        const x = X(w.date), anchor = x > W - 70 ? "end" : x < L + 40 ? "start" : "middle";
+        const t = el("text", { x, y: Y(w.lbs) - 16, "text-anchor": anchor, "font-weight": "600" }, f1(w.lbs) + " lb · " + fmtD(w.date)); t.style.fill = "var(--ribbon)";
+      }
+    }
 
-    // feed strip
+    // ----- feed strip
     el("text", { x: L - 8, y: FT + 4, "text-anchor": "end" }, "feed");
     el("line", { x1: L, x2: W - R, y1: FB, y2: FB, stroke: line });
     const rates = c.F.map(f => f.lbs);
@@ -311,7 +359,7 @@
       const fmax = Math.max(...rates) * 1.1 || 1, fmin = Math.min(0, Math.min(...rates));
       const FY = v => FB - (v - fmin) / (fmax - fmin) * (FB - FT);
       const inRange = [];
-      const r0 = c.rateOn(start); if (r0 != null) inRange.push({ date: start, lbs: r0 });
+      const r0 = c.rateOn(start); if (r0 != null) inRange.push({ date: start, lbs: r0, carried: true });
       c.F.forEach(f => { if (f.date > start && f.date <= end) inRange.push(f); });
       let path = "";
       inRange.forEach((f, i) => {
@@ -321,6 +369,48 @@
       });
       if (inRange.length) { path += " H" + (W - R); el("path", { d: path, fill: "none", stroke: "var(--feed)", "stroke-width": 2.5 }); }
     }
+
+    // ----- hit targets (on top, ≥32px, keyboard reachable)
+    c.W.forEach((w, i) => {
+      if (!inX(w.date)) return;
+      const x = X(w.date), y = Y(w.lbs);
+      const hit = el("circle", { class: "hit", cx: x, cy: y, r: 16, tabindex: 0, role: "button",
+        "aria-label": f1(w.lbs) + " lb on " + fmtDY(w.date) + (state.selected === w.date ? ", selected" : "") });
+      el("circle", { class: "focus-ring", cx: x, cy: y, r: 12 });
+      const pick = () => { state.selected = state.selected === w.date ? null : w.date; state.hover = null; drawChart(lastCalc); };
+      hit.addEventListener("click", e => { e.stopPropagation(); pick(); });
+      hit.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } });
+      hit.addEventListener("pointerenter", e => { if (e.pointerType === "mouse" && !state.selected && state.hover !== w.date) { state.hover = w.date; drawChart(lastCalc); } });
+      hit.addEventListener("pointerleave", e => { if (e.pointerType === "mouse" && state.hover === w.date) { state.hover = null; drawChart(lastCalc); } });
+    });
+    updateReadout();
+  }
+  $("chart").addEventListener("click", () => { if (state.selected) { state.selected = null; drawChart(lastCalc); } });
+
+  function updateReadout() {
+    const box = $("readout"); box.innerHTML = "";
+    const c = lastCalc, date = state.selected || state.hover;
+    const add = (cls, txt) => { const e = document.createElement(cls === "b" ? "b" : "span"); if (cls !== "b") e.className = cls; e.textContent = txt; box.appendChild(e); return e; };
+    const sep = () => add("sep", "·");
+    if (!c || !date) {
+      add("hint", c && c.W.length ? "Tap a weigh-in on the chart for its details." : "Log your first weigh-in to start the curve.");
+      return;
+    }
+    const i = c.W.findIndex(w => w.date === date); if (i < 0) { add("hint", "Tap a weigh-in on the chart for its details."); return; }
+    const w = c.W[i], prev = c.W[i - 1], period = c.periods.find(p => p.b.date === w.date);
+    add("b", f1(w.lbs) + " lb"); add("when", fmtDY(w.date));
+    if (period) {
+      sep(); add("", sign(period.gain) + " lb since " + fmtD(prev.date) + " (" + period.n + (period.n === 1 ? " day" : " days") + ")");
+      sep(); add("", f2(period.adg) + " lb/day");
+      if (period.missing < period.n) { sep(); add("", f1(period.feed) + (period.missing ? "*" : "") + " lb feed"); }
+      if (period.fcr != null) { sep(); add("", "F:G " + f2(period.fcr)); }
+    } else if (prev) {
+      sep(); add("", "Same day as the previous weigh-in");
+    } else {
+      sep(); add("", "First weigh-in");
+    }
+    const next = c.W[i + 1];
+    if (!next) { sep(); add("", days(w.date, c.today) === 0 ? "Today" : days(w.date, c.today) + " days ago"); }
   }
 
   // ---------- forms ----------
@@ -369,8 +459,11 @@
     if (document.activeElement && document.activeElement.form === $("setForm")) return; // don't clobber while editing
     $("sName").value = s.name || ""; $("sTarget").value = s.target; $("sShow").value = s.showDate;
   }
-  document.querySelectorAll(".seg").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll(".seg[data-basis]").forEach(b => b.addEventListener("click", () => {
     state.basis = b.dataset.basis; try { localStorage.setItem(BASIS_KEY, state.basis); } catch (_) {} render();
+  }));
+  document.querySelectorAll(".seg[data-range]").forEach(b => b.addEventListener("click", () => {
+    state.range = b.dataset.range; try { localStorage.setItem(RANGE_KEY, state.range); } catch (_) {} render();
   }));
   $("refreshBtn").addEventListener("click", load);
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") load(); });
