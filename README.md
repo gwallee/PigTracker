@@ -35,7 +35,7 @@ test/                   unit tests, a local mock of the API, and browser accepta
    |---|---|
    | **Feed** | Date · LbsPerDay · Note · Id · Created |
    | **Weighins** | Date · Lbs · Id · Created |
-   | **Settings** | Key · Value (PigName, TargetLbs, ShowDate) |
+   | **Settings** | Key · Value (PigName, Show1Name, Show1Date, Show1Min, Show1Max, Show2Name, Show2Date, Show2Min, Show2Max, TaperPct) |
 
    If you'd rather paste in history, type dates in the Date column as `2026-09-20` or `9/20/2026` and leave Id and Created blank. The script fills Ids in as it goes and tolerates blank rows and unsorted rows.
 
@@ -97,8 +97,10 @@ Nothing is stored except the raw rows. Everything is recomputed on every load.
 - **Weigh period:** each pair of consecutive weigh-ins. Gain = end − start; lb/day = gain ÷ days.
 - **Feed per period:** the sum of the daily feed amount for every day from the first weigh-in (inclusive) up to the next (exclusive). Days before your first feed row are unknown, shown with `*` on the total.
 - **Feed : gain (F:G):** feed ÷ gain for the period, only when gain is positive. Lower is better.
-- **Projected show weight:** last weight + daily gain × days until show. The three buttons pick which daily gain: the last period, a trend line through the last three weigh-ins, or a trend line through all of them. Your choice is remembered on that device.
-- **To hit target:** the gain still needed, the daily gain that would get there, and an estimated feed per day (required gain × latest F:G). It's a starting point, not a ration.
+- **Shows:** up to two, each with a date and a weight range (min and max, either may be blank). Set them in *Pig & show settings*. A projected weight inside the range is green, within 5 lb of a limit amber, outside red.
+- **Projected weight:** last weight + daily gain × days until the first show. The three buttons pick which daily gain: the last period, a trend line through the last three weigh-ins (recommended), or a trend line through all of them. Your choice is remembered on that device.
+- **Gain after first show:** a percentage applied to the current rate for the stretch between the two shows, e.g. 85 if you plan to pull feed back after the first show. 100 means no change. It stops applying once the first show has passed, because the weigh-ins from then on already reflect the slower gain.
+- **Gain plan:** for each show, the band of daily gain (from the last weigh-in) that lands inside its range, taper included; then the band that satisfies both shows at once, coloured by whether the current rate is inside it. If no rate works for both, it says so. The feed estimate is for the middle of that band at the latest F:G, a starting point, not a ration.
 
 ### Configuration flags (`config.js`)
 
@@ -125,14 +127,18 @@ node test/e2e.js                  # SPEC §8 acceptance checks in headless Chrom
 
 ### API
 
-`GET  <API_URL>?action=all` → `{ ok, settings:{name,target,showDate}, feed:[{id,date,lbs,note}], weighins:[{id,date,lbs}], sheetUrl, serverTime }`
+`GET  <API_URL>?action=all` → `{ ok, settings:{name,shows:[{name,date,min,max}],taperPct,target,showDate}, feed:[{id,date,lbs,note}], weighins:[{id,date,lbs}], sheetUrl, serverTime }`
+
+`target` and `showDate` echo the first show for older copies of the page. A Settings tab that only has the old `TargetLbs`/`ShowDate` keys is read as one show with min = max = target.
 
 `POST <API_URL>` with a JSON body sent as `Content-Type: text/plain` (avoids a CORS preflight, which Apps Script can't answer):
 
 ```json
 { "action": "addFeed",      "date": "2026-09-29", "lbs": 4.25, "note": "bump" }
 { "action": "addWeighin",   "date": "2026-09-26", "lbs": 236.5 }
-{ "action": "saveSettings", "name": "Hamlet", "target": 290, "showDate": "2026-12-06" }
+{ "action": "saveSettings", "name": "Hamlet", "taperPct": 85,
+  "shows": [ { "name": "Williamson County", "date": "2026-12-06", "min": 150, "max": 280 },
+             { "name": "San Antonio", "date": "2027-02-22", "min": 250, "max": 300 } ] }
 { "action": "delete",       "sheet": "Weighins", "id": "w_1a2b3c4d", "date": "2026-09-26" }
 ```
 

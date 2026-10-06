@@ -4,8 +4,8 @@
    the chart. */
 (function () {
   "use strict";
-  const { todayStr, days, addDays, calc, isDateStr } = PigCalc;
-  const DEFAULTS = { name: "", target: 290, showDate: "2026-12-06" };
+  const { todayStr, days, addDays, calc, isDateStr, normalizeShows } = PigCalc;
+  const DEFAULTS = { name: "", shows: [{ name: "Show", date: "2026-12-06", min: 150, max: 280 }], taperPct: 100 };
   const CACHE_KEY = "pigtracker.cache.v1", BASIS_KEY = "pigtracker.basis", RANGE_KEY = "pigtracker.range";
 
   // ?api=http://localhost:8787/api overrides config.js (used by the tests).
@@ -44,14 +44,16 @@
   // ---------- data layer ----------
   function normalize(j) {
     const s = j.settings || {};
-    const target = Number(s.target);
+    const { shows, taperPct } = normalizeShows(s);
     return {
       weights: Array.isArray(j.weighins) ? j.weighins : [],
       feeds: Array.isArray(j.feed) ? j.feed : [],
       settings: {
         name: typeof s.name === "string" ? s.name : "",
-        target: Number.isFinite(target) && target > 0 ? target : DEFAULTS.target,
-        showDate: isDateStr(s.showDate) ? s.showDate : DEFAULTS.showDate
+        shows: shows.length ? shows : DEFAULTS.shows.map(x => ({ ...x })),
+        taperPct,
+        // true when the Apps Script predates multi-show settings (it then can't store them)
+        legacyScript: !Array.isArray(s.shows)
       }
     };
   }
@@ -101,7 +103,7 @@
     if (!connected) {
       if (action === "addWeighin") localWrite("weighins", { date: payload.date, lbs: payload.lbs });
       else if (action === "addFeed") localWrite("feed", { date: payload.date, lbs: payload.lbs, note: payload.note });
-      else if (action === "saveSettings") { state.settings = { name: payload.name, target: payload.target, showDate: payload.showDate }; render(); }
+      else if (action === "saveSettings") { const n = normalizeShows(payload); state.settings = { name: payload.name, shows: n.shows, taperPct: n.taperPct }; render(); }
       else if (action === "delete") { const arr = payload.sheet === "Weighins" ? state.weights : state.feeds; const i = arr.findIndex(x => x.id === payload.id); if (i >= 0) arr.splice(i, 1); render(); }
       return;
     }
@@ -127,26 +129,42 @@
 
     $("pigName").textContent = s.name || "Show Pig";
     document.title = (s.name ? s.name + " · " : "") + "Show Pig Tracker";
-    $("headSub").textContent = "Target " + s.target + " lb · Show " + fmtDY(s.showDate);
+    const rangeTxt = sh => sh.min != null && sh.max != null ? (sh.min === sh.max ? sh.max + " lb" : sh.min + "–" + sh.max + " lb")
+      : sh.max != null ? "max " + sh.max + " lb" : sh.min != null ? "min " + sh.min + " lb" : "no range";
+    $("headSub").textContent = c.shows.map(sh => sh.name + " " + fmtD(sh.date) + " · " + rangeTxt(sh)).join("  ·  ") || "No show set";
     $("daysLeft").textContent = c.daysLeft;
-    $("daysLeftLabel").textContent = c.showPassed ? "show day passed" : c.daysLeft === 1 ? "day to show" : "days to show";
-    $("projDate").textContent = fmtD(s.showDate);
-    $("needTarget").textContent = s.target;
+    $("daysLeftLabel").textContent = c.allPassed ? "shows are done" : c.next ? (c.daysLeft === 1 ? "day to " : "days to ") + c.next.name : "days to show";
+    $("projLabel").textContent = c.next ? "Projected weight · " + c.next.name + " " + fmtD(c.next.date) : "Projected show weight";
 
     // projection
     const pill = $("projPill");
-    if (c.proj != null) {
+    const showList = $("showList"); showList.innerHTML = "";
+    if (c.proj != null && c.next) {
       $("projVal").textContent = f1(c.proj);
-      const diff = c.proj - s.target;
-      if (Math.abs(diff) <= 5) { pill.className = "pill good"; pill.textContent = "On target (" + sign(diff) + " lb)"; }
-      else if (diff > 0) { pill.className = "pill warn"; pill.textContent = f1(diff) + " lb over"; }
-      else { pill.className = "pill bad"; pill.textContent = f1(-diff) + " lb under"; }
+      pill.className = "pill " + c.next.status.level; pill.textContent = c.next.status.text;
       const basisTxt = { last: "the most recent weigh period", recent: "a trend line through the last 3 weigh-ins", all: "a trend line through every weigh-in" }[state.basis];
-      $("projText").textContent = "At " + f2(c.adg) + " lb/day (" + basisTxt + "), " + f1(c.last.lbs) + " lb on " + fmtD(c.last.date) +
-        " becomes about " + f1(c.proj) + " lb in " + c.daysToShow + (c.daysToShow === 1 ? " day." : " days.");
-    } else if (c.last && c.daysToShow < 0) {
-      $("projVal").textContent = "—"; pill.className = "pill none"; pill.textContent = "Show day has passed";
-      $("projText").textContent = "The last weigh-in is after the show date. Update the show date in settings to project again.";
+      let txt = "At " + f2(c.adg) + " lb/day (" + basisTxt + "), " + f1(c.last.lbs) + " lb on " + fmtD(c.last.date) +
+        " becomes about " + f1(c.proj) + " lb in " + c.next.daysFromLast + (c.next.daysFromLast === 1 ? " day." : " days.");
+      const later = c.shows.filter(sh => sh !== c.next && sh.proj != null);
+      if (later.length && c.taperPct !== 100) txt += " After " + c.next.name + " the plan assumes " + c.taperPct + "% of that rate (" + f2(c.adg * c.taper) + " lb/day).";
+      else if (later.length) txt += " The same rate is assumed after " + c.next.name + ".";
+      $("projText").textContent = txt;
+      // one line per upcoming show
+      c.shows.filter(sh => !sh.passed).forEach(sh => {
+        const li = document.createElement("li");
+        const nm = document.createElement("span"); nm.className = "nm"; nm.textContent = sh.name + " · " + fmtD(sh.date);
+        const v = document.createElement("span"); v.className = "num"; v.textContent = sh.proj != null ? f1(sh.proj) + " lb" : "—";
+        const rg = document.createElement("span"); rg.className = "rg"; rg.textContent = "range " + rangeTxt(sh);
+        li.append(nm, v, rg);
+        if (sh.status) { const p = document.createElement("span"); p.className = "pill " + sh.status.level; p.textContent = sh.status.text; li.appendChild(p); }
+        showList.appendChild(li);
+      });
+    } else if (c.last && c.allPassed) {
+      $("projVal").textContent = "—"; pill.className = "pill none"; pill.textContent = "Shows are done";
+      $("projText").textContent = "Every show date has passed. Set a new show in settings to project again.";
+    } else if (c.last && c.next && c.next.daysFromLast < 0) {
+      $("projVal").textContent = "—"; pill.className = "pill none"; pill.textContent = "Weigh-in after show date";
+      $("projText").textContent = "The last weigh-in is after " + c.next.name + "'s date. Check the dates in settings.";
     } else {
       $("projVal").textContent = "—"; pill.className = "pill none"; pill.textContent = "Need 2 weigh-ins";
       $("projText").textContent = "Log at least two weigh-ins to project the show weight.";
@@ -154,13 +172,53 @@
     document.querySelectorAll(".seg[data-basis]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.basis === state.basis)));
     document.querySelectorAll(".seg[data-range]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.range === state.range)));
 
-    if (c.last && c.daysToShow > 0) {
-      const g = s.target - c.last.lbs;
-      $("needGain").textContent = sign(g) + " lb";
-      $("needAdg").textContent = f2(c.needAdg) + " lb/day";
-      $("needFeed").textContent = (c.lastFcr != null && c.needAdg > 0) ? f2(c.needAdg * c.lastFcr) + " lb" : "—";
-    } else { $("needGain").textContent = "—"; $("needAdg").textContent = "—"; $("needFeed").textContent = "—"; }
+    // gain plan: the band of current daily gain that lands inside each show's range
+    const plan = $("planRows"); plan.innerHTML = "";
+    const bandTxt = b => {
+      if (!b) return "—";
+      const lo = b.lo == null || b.lo <= 0 ? null : b.lo, hi = b.hi == null ? null : b.hi;
+      if (hi != null && hi < 0) return "already over · needs " + f2(hi) + " lb/day";
+      if (lo != null && hi != null) return (lo <= hi ? f2(lo) + "–" + f2(hi) : "none") + " lb/day";
+      if (hi != null) return "≤ " + f2(hi) + " lb/day";
+      if (lo != null) return "≥ " + f2(lo) + " lb/day";
+      return "any rate";
+    };
+    const row = (label, value, cls, sub) => {
+      const r = document.createElement("div"); r.className = "need-row" + (cls ? " " + cls : "") + (sub ? " sub" : "");
+      const a = document.createElement("span"); a.textContent = label;
+      const b = document.createElement("span"); b.className = "num"; b.textContent = value;
+      r.append(a, b); plan.appendChild(r); return b;
+    };
+    const upcoming = c.shows.filter(sh => sh.allowed);
+    if (c.last && upcoming.length) {
+      upcoming.forEach(sh => {
+        const lbl = sh.name + " · " + sh.daysFromLast + " days" + (sh.rateMult !== 1 ? " · " + Math.round(sh.rateMult * 100) + "% after " + c.next.name : "");
+        row(lbl, bandTxt(sh.allowed), "", upcoming.length > 1);
+      });
+      if (upcoming.length > 1) {
+        const v = row("Both shows", c.band.feasible ? bandTxt(c.band) : "No single rate makes both", "band");
+        if (!c.band.feasible) v.classList.add("bad");
+      }
+      if (c.adg != null && c.band && c.band.feasible) {
+        const v = plan.querySelector(".band .num") || plan.querySelector(".num");
+        const lo = c.band.lo == null ? -Infinity : c.band.lo, hi = c.band.hi == null ? Infinity : c.band.hi;
+        v.classList.add(c.adg > hi || c.adg < lo ? "bad" : (hi - c.adg < 0.1 || c.adg - lo < 0.1) ? "warn" : "good");
+      }
+      // feed estimate for the middle of the band
+      let mid = null;
+      if (c.band && c.band.feasible) {
+        const lo = c.band.lo == null || c.band.lo < 0 ? 0 : c.band.lo, hi = c.band.hi;
+        mid = hi == null ? null : (lo + hi) / 2;
+      }
+      $("needFeed").textContent = (mid != null && mid > 0 && c.lastFcr != null) ? f2(mid * c.lastFcr) + " lb at " + f2(mid) + " lb/day" : "—";
+    } else {
+      row("Allowed daily gain", c.last ? "—" : "Log a weigh-in first");
+      $("needFeed").textContent = "—";
+    }
     $("curAdg").textContent = c.adg != null ? f2(c.adg) + " lb/day" : "—";
+    $("planNote").textContent = c.taperPct !== 100 && upcoming.length > 1
+      ? "Rates are the gain between now and " + c.next.name + "; the plan assumes " + c.taperPct + "% of that afterwards. Feed estimate = rate × latest feed conversion; a starting point, not a ration."
+      : "Rates are daily gain from the last weigh-in. Feed estimate = rate × latest feed conversion; a starting point, not a ration.";
 
     // stats
     if (c.last) { $("sWeight").innerHTML = f1(c.last.lbs) + "<small>lb</small>"; $("sWeightD").textContent = "Weighed " + fmtD(c.last.date); }
@@ -268,7 +326,8 @@
       start = addDays(start, -Math.max(1, Math.round(pad / 2))); end = addDays(tail, pad);
     } else {
       start = c.W[0].date;
-      end = s.showDate > c.today ? addDays(s.showDate, 2) : addDays(c.today, 2);
+      const lastDate = c.lastShow && c.lastShow.date > c.today ? c.lastShow.date : c.today;
+      end = addDays(lastDate, 2);
     }
     const span = Math.max(1, days(start, end));
     const X = d => L + (days(start, d) / span) * (W - L - R);
@@ -276,7 +335,14 @@
 
     // ----- y scale: whole run frames target + projection; zoom frames only the visible weigh-ins
     const ys = vis.map(w => w.lbs);
-    if (!zoomN) { ys.push(s.target); if (c.proj != null) ys.push(c.proj); }
+    if (!zoomN) {
+      const lowest = Math.min(...c.W.map(w => w.lbs));
+      c.shows.forEach(sh => {
+        if (sh.max != null) ys.push(sh.max);
+        if (sh.min != null && sh.min >= lowest - 20) ys.push(sh.min); // a far-below min just runs off the bottom
+        if (sh.proj != null) ys.push(sh.proj);
+      });
+    }
     let lo = Math.min(...ys), hi = Math.max(...ys);
     const step = pickStep(Math.max(1, hi - lo), [1, 2, 5, 10, 20, 40, 100]);
     const margin = zoomN ? step * 0.6 : 5;
@@ -307,25 +373,44 @@
       el("line", { x1: X(c.today), x2: X(c.today), y1: T, y2: FB, stroke: ink3, "stroke-width": 1 });
       el("text", { x: X(c.today) + 4, y: T + 10, "text-anchor": "start" }, "today");
     }
-    // ----- target
-    if (inY(s.target)) {
-      el("line", { x1: L, x2: W - R, y1: Y(s.target), y2: Y(s.target), stroke: "var(--good)", "stroke-width": 1.5, "stroke-dasharray": "6 4" });
-      if (inX(s.showDate)) {
-        el("circle", { cx: X(s.showDate), cy: Y(s.target), r: 6, fill: "var(--surface)", stroke: "var(--good)", "stroke-width": 2.5 });
-        el("text", { x: X(s.showDate) - 10, y: Y(s.target) - 10, "text-anchor": "end" }, s.target + " lb target").style.fill = "var(--good)";
-      } else {
-        el("text", { x: W - R, y: Y(s.target) - 6, "text-anchor": "end" }, s.target + " lb target").style.fill = "var(--good)";
-      }
+    // ----- show ranges: a band at each show date from min to max (open at the bottom if min is off-scale)
+    const bandW = narrow ? 10 : 14;
+    c.shows.forEach(sh => {
+      if (!inX(sh.date) || (sh.min == null && sh.max == null)) return;
+      const x = X(sh.date), top = sh.max != null ? Y(Math.min(sh.max, hi)) : T, bot = sh.min != null && inY(sh.min) ? Y(sh.min) : PB;
+      el("rect", { x: x - bandW / 2, y: top, width: bandW, height: Math.max(2, bot - top), rx: 3, fill: "var(--good)", "fill-opacity": .18 });
+      el("line", { x1: x - bandW / 2, x2: x + bandW / 2, y1: top, y2: top, stroke: "var(--good)", "stroke-width": 2.5 });
+      if (sh.min != null && inY(sh.min)) el("line", { x1: x - bandW / 2, x2: x + bandW / 2, y1: bot, y2: bot, stroke: "var(--good)", "stroke-width": 2.5 });
+      const lbl = (narrow ? "" : sh.name + " ") + (sh.min != null && sh.max != null && sh.min !== sh.max ? sh.min + "–" + sh.max : (sh.max != null ? sh.max : sh.min));
+      const anchor = x < L + 120 ? "start" : "end", lx = anchor === "end" ? x - bandW / 2 - 6 : x + bandW / 2 + 6;
+      sh._labelY = top - 6; sh._labelAnchor = anchor;
+      el("text", { x: lx, y: top - 6, "text-anchor": anchor }, lbl).style.fill = "var(--good)";
+    });
+    // dashed ceiling for the next show's max
+    if (c.next && c.next.max != null && inY(c.next.max) && !zoomN) {
+      el("line", { x1: L, x2: W - R, y1: Y(c.next.max), y2: Y(c.next.max), stroke: "var(--good)", "stroke-width": 1, "stroke-dasharray": "6 4", "stroke-opacity": .7 });
     }
-    // ----- projection (clipped when zoomed)
+    // ----- projection: last weigh-in → each upcoming show (clipped when zoomed)
     if (c.proj != null) {
-      el("line", { x1: X(c.last.date), y1: Y(c.last.lbs), x2: X(s.showDate), y2: Y(c.proj), stroke: "var(--ribbon)", "stroke-width": 2.5, "stroke-dasharray": "7 5" }, null, plot);
-      if (!zoomN) {
-        el("circle", { cx: X(s.showDate), cy: Y(c.proj), r: 5, fill: "var(--ribbon)" });
-        const pl = el("text", { x: X(s.showDate) - 10, y: Y(c.proj) + (c.proj >= s.target ? -10 : 18), "text-anchor": "end" }, f1(c.proj) + " projected");
-        pl.style.fill = "var(--ribbon)";
-        if (Math.abs(Y(c.proj) - Y(s.target)) < 16) pl.setAttribute("y", c.proj >= s.target ? Y(s.target) - 24 : Y(s.target) + 30);
-      }
+      const stops = c.shows.filter(sh => sh.proj != null);
+      let px = X(c.last.date), py = Y(c.last.lbs);
+      stops.forEach((sh, i) => {
+        const x = X(sh.date), y = Y(sh.proj);
+        el("line", { x1: px, y1: py, x2: x, y2: y, stroke: "var(--ribbon)", "stroke-width": 2.5, "stroke-dasharray": "7 5", "stroke-opacity": i === 0 ? 1 : .75 }, null, plot);
+        if (!zoomN) {
+          el("circle", { cx: x, cy: y, r: 5, fill: "var(--ribbon)" });
+          // right of the point by default; the band label sits on the left, so they only meet at the right edge
+          const anchor = x > W - 100 ? "end" : "start", lx = anchor === "end" ? x - 10 : x + 10;
+          let ly = y - 8;
+          // keep clear of every range label sitting at about the same height
+          const bandYs = c.shows.map(o => o._labelY).filter(v => v != null);
+          for (let guard = 0; guard < 3 && bandYs.some(by => Math.abs(ly - by) < 14); guard++) ly -= 14;
+          if (ly < T + 10) ly = y + 16;
+          const pl = el("text", { x: lx, y: ly, "text-anchor": anchor }, f1(sh.proj) + (i === 0 ? " projected" : ""));
+          pl.style.fill = "var(--ribbon)";
+        }
+        px = x; py = y;
+      });
     }
     // ----- weights
     const pts = c.W.map(w => X(w.date) + "," + Y(w.lbs));
@@ -370,14 +455,27 @@
       if (inRange.length) { path += " H" + (W - R); el("path", { d: path, fill: "none", stroke: "var(--feed)", "stroke-width": 2.5 }); }
     }
 
-    // ----- hit targets (on top, ≥32px, keyboard reachable)
+    // ----- hit targets. Per-point circles (keyboard reachable) sized so
+    // neighbours never overlap, plus a nearest-point layer underneath so a
+    // tap anywhere near the curve still picks the closest weigh-in.
+    const visPts = c.W.filter(w => inX(w.date));
+    let minGap = Infinity;
+    for (let i = 1; i < visPts.length; i++) minGap = Math.min(minGap, X(visPts[i].date) - X(visPts[i - 1].date));
+    const hitR = Math.max(6, Math.min(16, minGap / 2 - 1));
+    const pickDate = d => { state.selected = state.selected === d ? null : d; state.hover = null; drawChart(lastCalc); };
+    const nearest = px => { let best = null, bd = 24; for (const w of visPts) { const d = Math.abs(X(w.date) - px); if (d < bd) { bd = d; best = w; } } return best; };
+    const svgX = e => { const r = svg.getBoundingClientRect(); return (e.clientX - r.left) * (W / r.width); };
+    const layer = el("rect", { x: L, y: T, width: W - L - R, height: PB - T, fill: "transparent" });
+    layer.addEventListener("click", e => { const w = nearest(svgX(e)); if (w) { e.stopPropagation(); pickDate(w.date); } });
+    layer.addEventListener("pointermove", e => { if (e.pointerType !== "mouse" || state.selected) return; const w = nearest(svgX(e)); const d = w ? w.date : null; if (d !== state.hover) { state.hover = d; drawChart(lastCalc); } });
+    layer.addEventListener("pointerleave", e => { if (e.pointerType === "mouse" && state.hover) { state.hover = null; drawChart(lastCalc); } });
     c.W.forEach((w, i) => {
       if (!inX(w.date)) return;
       const x = X(w.date), y = Y(w.lbs);
-      const hit = el("circle", { class: "hit", cx: x, cy: y, r: 16, tabindex: 0, role: "button",
+      const hit = el("circle", { class: "hit", cx: x, cy: y, r: hitR, tabindex: 0, role: "button",
         "aria-label": f1(w.lbs) + " lb on " + fmtDY(w.date) + (state.selected === w.date ? ", selected" : "") });
-      el("circle", { class: "focus-ring", cx: x, cy: y, r: 12 });
-      const pick = () => { state.selected = state.selected === w.date ? null : w.date; state.hover = null; drawChart(lastCalc); };
+      el("circle", { class: "focus-ring", cx: x, cy: y, r: Math.min(12, hitR + 2) });
+      const pick = () => pickDate(w.date);
       hit.addEventListener("click", e => { e.stopPropagation(); pick(); });
       hit.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } });
       hit.addEventListener("pointerenter", e => { if (e.pointerType === "mouse" && !state.selected && state.hover !== w.date) { state.hover = w.date; drawChart(lastCalc); } });
@@ -449,15 +547,31 @@
   });
   $("setForm").addEventListener("submit", async e => {
     e.preventDefault();
-    const name = $("sName").value.trim().slice(0, 40), target = Math.round(parseFloat($("sTarget").value)), showDate = $("sShow").value;
-    if (!(target >= 1 && target <= 1000)) return flash("sMsg", "Enter a target between 1 and 1000 lb.", false);
-    if (!isDateStr(showDate)) return flash("sMsg", "Pick a show date.", false);
-    await submit($("sBtn"), "sMsg", "saveSettings", { name, target, showDate }, "Settings saved.");
+    const name = $("sName").value.trim().slice(0, 40);
+    const numOrNull = id => { const v = $(id).value.trim(); if (v === "") return null; const n = Math.round(parseFloat(v)); return Number.isFinite(n) ? n : NaN; };
+    const readShow = (k, fallbackName) => ({ name: $(k + "Name").value.trim().slice(0, 40) || fallbackName, date: $(k + "Date").value, min: numOrNull(k + "Min"), max: numOrNull(k + "Max") });
+    const s1 = readShow("s1", "First show"), s2 = readShow("s2", "Second show");
+    if (!isDateStr(s1.date)) return flash("sMsg", "Pick a date for the first show.", false);
+    const shows = [s1]; if (s2.date || s2.min != null || s2.max != null) { if (!isDateStr(s2.date)) return flash("sMsg", "Pick a date for the second show, or clear its fields.", false); shows.push(s2); }
+    for (const sh of shows) {
+      for (const k of ["min", "max"]) if (sh[k] != null && !(sh[k] >= 1 && sh[k] <= 1000)) return flash("sMsg", sh.name + ": weights must be between 1 and 1000 lb.", false);
+      if (sh.min != null && sh.max != null && sh.min > sh.max) return flash("sMsg", sh.name + ": min is above max.", false);
+    }
+    if (shows.length === 2 && shows[1].date <= shows[0].date) return flash("sMsg", "The second show must be after the first.", false);
+    const tv = $("sTaper").value.trim(); const taperPct = tv === "" ? 100 : Math.round(parseFloat(tv));
+    if (!(taperPct >= 0 && taperPct <= 200)) return flash("sMsg", "Gain after first show must be 0–200%.", false);
+    if (state.settings.legacyScript && connected) return flash("sMsg", "The Apps Script needs updating before shows can be saved: paste the new Code.gs and deploy a new version.", false);
+    await submit($("sBtn"), "sMsg", "saveSettings", { name, shows, taperPct }, "Settings saved.");
   });
   function fillSettings() {
     const s = state.settings;
     if (document.activeElement && document.activeElement.form === $("setForm")) return; // don't clobber while editing
-    $("sName").value = s.name || ""; $("sTarget").value = s.target; $("sShow").value = s.showDate;
+    $("sName").value = s.name || "";
+    $("sTaper").value = s.taperPct === 100 ? "" : s.taperPct;
+    [["s1", s.shows[0]], ["s2", s.shows[1]]].forEach(([k, sh]) => {
+      $(k + "Name").value = sh ? sh.name : ""; $(k + "Date").value = sh ? sh.date : "";
+      $(k + "Min").value = sh && sh.min != null ? sh.min : ""; $(k + "Max").value = sh && sh.max != null ? sh.max : "";
+    });
   }
   document.querySelectorAll(".seg[data-basis]").forEach(b => b.addEventListener("click", () => {
     state.basis = b.dataset.basis; try { localStorage.setItem(BASIS_KEY, state.basis); } catch (_) {} render();

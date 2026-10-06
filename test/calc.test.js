@@ -1,9 +1,13 @@
 /* Unit tests for calc.js — run with: node --test test/ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { calc, days, addDays, slope } = require("../calc.js");
+const { calc, days, addDays, slope, normalizeShows, rangeStatus } = require("../calc.js");
 
-const S = { name: "", target: 290, showDate: "2026-12-06" };
+const S = { name: "", target: 290, showDate: "2026-12-06" }; // legacy single-target settings
+const TWO = { name: "Hamlet", taperPct: 85, shows: [
+  { name: "Williamson County", date: "2026-12-06", min: 150, max: 280 },
+  { name: "San Antonio", date: "2027-02-22", min: 250, max: 300 }
+] };
 const r2 = n => Math.round(n * 100) / 100;
 
 test("date helpers use UTC day math", () => {
@@ -31,7 +35,8 @@ test("SPEC §8: feed 4.00 from 8/20, four weekly weigh-ins", () => {
   // projection from the last period: 229.5 + 0.857 × 77 days
   assert.equal(c.daysToShow, 77);
   assert.equal(r2(c.proj), r2(229.5 + (6 / 7) * 77));
-  assert.equal(r2(c.needAdg), r2((290 - 229.5) / 77));
+  assert.equal(r2(c.band.hi), r2((290 - 229.5) / 77)); // legacy target → min = max = target
+  assert.equal(r2(c.band.lo), r2((290 - 229.5) / 77));
   assert.equal(c.rateNow, 4);
   assert.equal(c.daysLeft, 74);
 });
@@ -87,7 +92,7 @@ test("fewer than two weigh-ins → no projection, one weigh-in still gives 'need
   assert.equal(c0.proj, null); assert.equal(c0.last, null); assert.equal(c0.daysLeft, 74);
   const c1 = calc([{ date: "2026-09-20", lbs: 229.5 }], [], S, "last", "2026-09-23");
   assert.equal(c1.proj, null); assert.equal(c1.adg, null);
-  assert.equal(r2(c1.needAdg), r2(60.5 / 77));
+  assert.equal(r2(c1.band.hi), r2(60.5 / 77));
 });
 
 test("after show day: no projection, countdown floors at 0", () => {
@@ -113,4 +118,78 @@ test("scheduled feed changes aren't applied before their date", () => {
   assert.equal(c.rateNow, 4);
   assert.equal(c.rateOn("2026-09-28"), 4.25);
   assert.equal(c.rateOn("2026-08-19"), null);
+});
+
+// ---------------------------------------------------------------- two shows
+
+const RUN = [["2026-08-30", 212], ["2026-09-06", 218], ["2026-09-13", 223.5], ["2026-09-20", 229.5], ["2026-09-27", 235], ["2026-10-04", 241.5]]
+  .map(([date, lbs]) => ({ date, lbs }));
+
+test("normalizeShows: new shape, sorting, legacy fallback and taper bounds", () => {
+  const n = normalizeShows(TWO);
+  assert.equal(n.shows.length, 2); assert.equal(n.shows[0].name, "Williamson County"); assert.equal(n.taperPct, 85);
+  const unsorted = normalizeShows({ shows: [TWO.shows[1], TWO.shows[0]] });
+  assert.equal(unsorted.shows[0].date, "2026-12-06");
+  const legacy = normalizeShows(S);
+  assert.deepEqual(legacy.shows, [{ name: "Show", date: "2026-12-06", min: 290, max: 290 }]);
+  assert.equal(legacy.taperPct, 100);
+  assert.equal(normalizeShows({ shows: [{ name: "x", date: "nope" }] }).shows.length, 0);
+  assert.equal(normalizeShows({ shows: TWO.shows, taperPct: 500 }).taperPct, 100);
+  const blankRange = normalizeShows({ shows: [{ date: "2026-12-06", min: "", max: "" }] }).shows[0];
+  assert.equal(blankRange.min, null); assert.equal(blankRange.max, null); assert.equal(blankRange.name, "Show 1");
+});
+
+test("piecewise projection: current rate to show 1, tapered rate to show 2", () => {
+  const c = calc(RUN, [], TWO, "last", "2026-10-06");
+  const adg = 6.5 / 7;
+  assert.equal(r2(c.adg), r2(adg));
+  const [w, sa] = c.shows;
+  assert.equal(w.daysFromLast, 63); assert.equal(w.effDays, 63); assert.equal(w.rateMult, 1);
+  assert.equal(r2(w.proj), r2(241.5 + adg * 63));
+  assert.equal(sa.daysFromLast, 141); assert.equal(sa.rateMult, 0.85);
+  assert.equal(r2(sa.effDays), r2(63 + 78 * 0.85));
+  assert.equal(r2(sa.proj), r2(241.5 + adg * (63 + 78 * 0.85)));
+  assert.equal(c.next, w); assert.equal(c.proj, w.proj); assert.equal(c.daysLeft, 61);
+  // with no taper the second leg runs at the same rate
+  const flat = calc(RUN, [], { ...TWO, taperPct: 100 }, "last", "2026-10-06");
+  assert.equal(r2(flat.shows[1].proj), r2(241.5 + adg * 141));
+});
+
+test("allowed gain band per show and the intersection for both", () => {
+  const c = calc(RUN, [], TWO, "last", "2026-10-06");
+  const [w, sa] = c.shows;
+  assert.equal(r2(w.allowed.hi), r2((280 - 241.5) / 63));
+  assert.ok(w.allowed.lo < 0); // 150 lb min is already behind us
+  assert.equal(r2(sa.allowed.hi), r2((300 - 241.5) / sa.effDays));
+  assert.equal(r2(sa.allowed.lo), r2((250 - 241.5) / sa.effDays));
+  assert.equal(c.band.feasible, true);
+  assert.equal(r2(c.band.lo), r2(sa.allowed.lo));
+  assert.equal(r2(c.band.hi), r2(Math.min(w.allowed.hi, sa.allowed.hi)));
+  // impossible pair: must stay under 245 at show 1 but reach 300 at show 2
+  const bad = calc(RUN, [], { shows: [{ name: "A", date: "2026-12-06", max: 245 }, { name: "B", date: "2027-02-22", min: 300 }], taperPct: 100 }, "last", "2026-10-06");
+  assert.equal(bad.band.feasible, false);
+});
+
+test("after show 1 passes: no taper, show 2 is next, show 1 reports as passed", () => {
+  const later = RUN.concat([{ date: "2026-12-10", lbs: 275 }, { date: "2026-12-17", lbs: 279 }]);
+  const c = calc(later, [], TWO, "last", "2026-12-18");
+  assert.equal(c.shows[0].passed, true); assert.equal(c.shows[0].proj, null);
+  assert.equal(c.next.name, "San Antonio"); assert.equal(c.next.rateMult, 1);
+  assert.equal(c.next.effDays, days("2026-12-17", "2027-02-22"));
+  assert.equal(r2(c.proj), r2(279 + (4 / 7) * c.next.effDays));
+  const done = calc(later, [], TWO, "last", "2027-03-01");
+  assert.equal(done.allPassed, true); assert.equal(done.next, null); assert.equal(done.proj, null); assert.equal(done.daysLeft, 0);
+});
+
+test("range status leans on the max", () => {
+  const sh = { min: 250, max: 300 };
+  assert.equal(rangeStatus(310, sh).level, "bad"); assert.match(rangeStatus(310, sh).text, /10\.0 lb over max/);
+  assert.equal(rangeStatus(240, sh).level, "bad"); assert.match(rangeStatus(240, sh).text, /10\.0 lb under min/);
+  assert.equal(rangeStatus(297, sh).level, "warn"); assert.match(rangeStatus(297, sh).text, /3\.0 lb from max/);
+  assert.equal(rangeStatus(253, sh).level, "warn");
+  assert.equal(rangeStatus(275, sh).level, "good"); assert.equal(rangeStatus(275, sh).text, "In range");
+  assert.equal(rangeStatus(283, { min: null, max: 280 }).level, "bad");
+  assert.equal(rangeStatus(100, { min: null, max: 280 }).level, "good");
+  const single = { min: 290, max: 290 };
+  assert.equal(rangeStatus(293, single).level, "good"); assert.equal(rangeStatus(296, single).level, "bad"); assert.match(rangeStatus(296, single).text, /over$/);
 });

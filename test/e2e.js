@@ -100,13 +100,31 @@ async function main() {
       assert.equal(await page.inputValue("#wLbs"), "0.5");
     });
 
-    await check("settings save updates the header", async () => {
+    await check("settings: two shows with ranges and a taper", async () => {
       await page.click("details.settings summary");
-      await page.fill("#sName", "Hamlet"); await page.fill("#sTarget", "285"); await page.fill("#sShow", "2026-12-05");
+      await page.fill("#sName", "Hamlet"); await page.fill("#sTaper", "85");
+      await page.fill("#s1Name", "Williamson County"); await page.fill("#s1Date", "2026-12-05"); await page.fill("#s1Min", "150"); await page.fill("#s1Max", "280");
+      await page.fill("#s2Name", "San Antonio"); await page.fill("#s2Date", "2027-02-22"); await page.fill("#s2Min", "250"); await page.fill("#s2Max", "300");
       await page.click("#sBtn"); await page.waitForSelector("#sMsg.ok");
       assert.equal((await page.textContent("#pigName")).trim(), "Hamlet");
-      assert.equal((await page.textContent("#headSub")).trim(), "Target 285 lb · Show Dec 5, 2026");
+      assert.match(await page.textContent("#headSub"), /Williamson County Dec 5 · 150–280 lb\s+·\s+San Antonio Feb 22 · 250–300 lb/);
       assert.equal((await page.textContent("#daysLeft")).trim(), "73");
+      assert.match(await page.textContent("#daysLeftLabel"), /days to Williamson County/);
+      // 230 lb on Sep 21 at 0.8125 lb/day: Dec 5 = 75 days → 290.9 (over 280 max); SA = 75 + 79×0.85 days
+      assert.equal((await page.textContent("#projVal")).trim(), (230 + 0.8125 * 75).toFixed(1));
+      assert.match(await page.textContent("#projPill"), /10\.9 lb over max/);
+      const sa = (230 + 0.8125 * (75 + 79 * 0.85)).toFixed(1);
+      assert.match(await page.textContent("#showList"), new RegExp("San Antonio · Feb 22\\s*" + sa.replace(".", "\\.") + " lb"));
+      assert.match(await page.textContent("#projText"), /assumes 85% of that rate \(0\.69 lb\/day\)/);
+      const plan = await page.textContent("#planRows");
+      assert.match(plan, /Williamson County · 75 days\s*≤ 0\.67 lb\/day/);
+      assert.match(plan, /San Antonio · 154 days · 85% after Williamson County/);
+      assert.match(plan, /Both shows/);
+      assert.equal(await page.locator("#chart rect[rx]").count(), 2, "two show-range bands on the chart");
+      // validation: second show before the first
+      await page.fill("#s2Date", "2026-11-01"); await page.click("#sBtn"); await page.waitForSelector("#sMsg.err");
+      assert.match(await page.textContent("#sMsg"), /second show must be after the first/);
+      await page.fill("#s2Date", "2027-02-22"); await page.click("#sBtn"); await page.waitForSelector("#sMsg.ok");
     });
 
     await check("projection basis toggle persists", async () => {

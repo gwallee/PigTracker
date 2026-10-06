@@ -6,7 +6,8 @@ const fs = require("fs"), path = require("path"), vm = require("vm");
 
 const TZ = "America/Chicago";
 const ctx = {
-  SpreadsheetApp: { getActive: () => ({ getSpreadsheetTimeZone: () => TZ, getSheetByName: () => null }) },
+  SpreadsheetApp: { getActive: () => ({ getSpreadsheetTimeZone: () => TZ, getSheetByName: name => ctx.__sheets[name] || null }) },
+  __sheets: {},
   Session: { getScriptTimeZone: () => TZ },
   Utilities: {
     formatDate: (d, tz, fmt) => {
@@ -87,4 +88,34 @@ test("idFor_ falls back to the row number", () => {
 
 test("newId_ shape", () => {
   assert.match(ctx.newId_("w"), /^w_[0-9a-f]{8}$/);
+});
+
+// A minimal stand-in for a Settings tab: rows of [Key, Value]
+function settingsSheet(rows) {
+  return { getLastRow: () => rows.length + 1, getRange: (r, c, n, w) => ({ getValues: () => rows.slice(r - 2, r - 2 + n).map(row => { const out = row.slice(0, w); while (out.length < w) out.push(""); return out; }) }) };
+}
+
+test("readSettings_: new Show1/Show2 keys, taper, legacy echo", () => {
+  ctx.__sheets.Settings = settingsSheet([
+    ["PigName", "Hamlet"], ["Show1Name", "Williamson County"], ["Show1Date", new Date(Date.UTC(2026, 11, 6, 6))], ["Show1Min", 150], ["Show1Max", 280],
+    ["Show2Name", "San Antonio"], ["Show2Date", "2/22/2027"], ["Show2Min", "250"], ["Show2Max", 300], ["TaperPct", 85], ["TargetLbs", 290], ["ShowDate", "2026-01-01"]
+  ]);
+  const s = ctx.readSettings_();
+  assert.equal(s.name, "Hamlet"); assert.equal(s.taperPct, 85);
+  assert.deepEqual(JSON.parse(JSON.stringify(s.shows)), [
+    { name: "Williamson County", date: "2026-12-06", min: 150, max: 280 },
+    { name: "San Antonio", date: "2027-02-22", min: 250, max: 300 }
+  ]);
+  assert.equal(s.showDate, "2026-12-06"); assert.equal(s.target, 280); // legacy fields follow show 1
+});
+
+test("readSettings_: old TargetLbs/ShowDate sheet becomes a single show", () => {
+  ctx.__sheets.Settings = settingsSheet([["PigName", "Pig"], ["TargetLbs", 290], ["ShowDate", "2026-12-06"]]);
+  const s = ctx.readSettings_();
+  assert.deepEqual(JSON.parse(JSON.stringify(s.shows)), [{ name: "Show", date: "2026-12-06", min: 290, max: 290 }]);
+  assert.equal(s.taperPct, 100);
+  ctx.__sheets.Settings = settingsSheet([["Show1Date", "garbage"], ["Show2Date", "2027-02-22"], ["Show2Max", ""]]);
+  const t = ctx.readSettings_();
+  assert.deepEqual(JSON.parse(JSON.stringify(t.shows)), [{ name: "Show 2", date: "2027-02-22", min: null, max: null }]);
+  delete ctx.__sheets.Settings;
 });

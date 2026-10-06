@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-version="7"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="en" data-version="8"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Show Pig Tracker</title>
 <meta name="color-scheme" content="light dark">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -87,6 +87,8 @@ header .sub{color:var(--ink-2);margin-top:4px}
 .proj p{margin:8px 0 0;color:var(--ink-2);max-width:60ch}
 .need{display:grid;gap:10px;background:var(--sunk);border-radius:8px;padding:14px}
 .need-row{display:flex;justify-content:space-between;gap:12px;align-items:baseline}
+.need-row span:first-child{flex:1 1 auto;min-width:0}
+.need-row .num{white-space:nowrap;text-align:right}
 .need-row .num{font-size:18px;font-weight:500}
 .need small{color:var(--ink-3);font-size:12px}
 .basis{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
@@ -163,8 +165,20 @@ ul.log .note{font-family:var(--body);font-weight:400;color:var(--ink-3);font-siz
 
 details.settings summary{cursor:pointer;font-family:var(--display);font-size:20px;font-weight:600;min-height:44px;display:flex;align-items:center}
 details.settings form{margin-top:12px}
-.row3{display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px}
-@media (max-width:560px){.row3{grid-template-columns:1fr}}
+.row3{display:grid;grid-template-columns:2fr 1fr;gap:10px}
+.row4{display:grid;grid-template-columns:2fr 1.4fr 1fr 1fr;gap:10px}
+@media (max-width:560px){.row3{grid-template-columns:1fr}.row4{grid-template-columns:1fr 1fr}.row4 label:first-child{grid-column:1/-1}}
+fieldset.show-set{border:1px solid var(--line);border-radius:8px;padding:10px 12px 12px;margin:0;min-width:0}
+fieldset.show-set legend{font-family:var(--display);font-size:16px;font-weight:600;padding:0 6px}
+fieldset.show-set .opt{font-family:var(--body);font-weight:400;font-size:12px;color:var(--ink-3)}
+ul.shows{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:6px}
+ul.shows li{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;font-size:14px;color:var(--ink-2)}
+ul.shows li .nm{font-weight:600;color:var(--ink)}
+ul.shows li .num{color:var(--ink)}
+ul.shows li .rg{color:var(--ink-3);font-size:13px}
+.need-row.band .num{font-weight:600}
+.need-row .num.good{color:var(--good)} .need-row .num.warn{color:var(--warn)} .need-row .num.bad{color:var(--bad)}
+.need-row.sub span:first-child{color:var(--ink-3);font-size:13px}
 .foot{color:var(--ink-3);font-size:12px;text-align:center}
 .foot a{color:inherit}
 @media (max-width:560px){
@@ -240,8 +254,9 @@ details.settings form{margin-top:12px}
   <section class="panel">
     <div class="proj">
       <div>
-        <div class="label">Projected show weight · <span id="projDate">Dec 6</span></div>
+        <div class="label" id="projLabel">Projected show weight</div>
         <div class="proj-big"><span class="val num" id="projVal">—</span><span class="unit">lb</span><span class="pill none" id="projPill">Need 2 weigh-ins</span></div>
+        <ul class="shows" id="showList"></ul>
         <p id="projText">Log at least two weigh-ins to project the show weight.</p>
         <div class="basis" role="group" aria-label="Projection based on">
           <button class="seg" type="button" data-basis="last" aria-pressed="true">Last period gain</button>
@@ -250,12 +265,11 @@ details.settings form{margin-top:12px}
         </div>
       </div>
       <div class="need">
-        <div class="label">To hit <span id="needTarget">290</span> lb</div>
-        <div class="need-row"><span>Gain still needed</span><span class="num" id="needGain">—</span></div>
-        <div class="need-row"><span>Required daily gain</span><span class="num" id="needAdg">—</span></div>
+        <div class="label">Gain plan</div>
+        <div id="planRows"></div>
         <div class="need-row"><span>Current daily gain</span><span class="num" id="curAdg">—</span></div>
-        <div class="need-row"><span>Est. feed / day at current F:G</span><span class="num" id="needFeed">—</span></div>
-        <small>Feed estimate = required daily gain × latest feed conversion. A starting point, not a ration.</small>
+        <div class="need-row"><span>Est. feed / day, middle of band</span><span class="num" id="needFeed">—</span></div>
+        <small id="planNote">Rates are the gain between now and the first show. Feed estimate = that rate × latest feed conversion; a starting point, not a ration.</small>
       </div>
     </div>
   </section>
@@ -281,7 +295,7 @@ details.settings form{margin-top:12px}
     <div class="legend">
       <span><i style="background:var(--ink)"></i>Weigh-ins</span>
       <span><i style="background:var(--ribbon)"></i>Projection</span>
-      <span><i style="background:var(--good)"></i>Target</span>
+      <span><i style="background:var(--good)"></i>Show range</span>
       <span><i style="background:var(--feed)"></i>Feed lb/day</span>
     </div>
   </section>
@@ -315,19 +329,37 @@ details.settings form{margin-top:12px}
       <form id="setForm" novalidate>
         <div class="row3">
           <label class="f">Pig's name<input type="text" id="sName" maxlength="40" placeholder="Show Pig"></label>
-          <label class="f">Target (lb)<input type="number" id="sTarget" step="1" min="1" max="1000" inputmode="numeric" required></label>
-          <label class="f">Show date<input type="date" id="sShow" required></label>
+          <label class="f">Gain after first show (% of current)<input type="number" id="sTaper" step="1" min="0" max="200" inputmode="numeric" placeholder="85"></label>
         </div>
+        <fieldset class="show-set">
+          <legend>First show</legend>
+          <div class="row4">
+            <label class="f">Name<input type="text" id="s1Name" maxlength="40" placeholder="Williamson County"></label>
+            <label class="f">Date<input type="date" id="s1Date" required></label>
+            <label class="f">Min (lb)<input type="number" id="s1Min" step="1" min="1" max="1000" inputmode="numeric" placeholder="150"></label>
+            <label class="f">Max (lb)<input type="number" id="s1Max" step="1" min="1" max="1000" inputmode="numeric" placeholder="280"></label>
+          </div>
+        </fieldset>
+        <fieldset class="show-set">
+          <legend>Second show <span class="opt">(optional, leave the date blank for none)</span></legend>
+          <div class="row4">
+            <label class="f">Name<input type="text" id="s2Name" maxlength="40" placeholder="San Antonio"></label>
+            <label class="f">Date<input type="date" id="s2Date"></label>
+            <label class="f">Min (lb)<input type="number" id="s2Min" step="1" min="1" max="1000" inputmode="numeric" placeholder="250"></label>
+            <label class="f">Max (lb)<input type="number" id="s2Max" step="1" min="1" max="1000" inputmode="numeric" placeholder="300"></label>
+          </div>
+        </fieldset>
+        <p class="hint">Projection runs at the current daily gain until the first show, then at the percentage above until the second. 100 = no change. Once the first show has passed, the percentage no longer applies.</p>
         <button class="btn weigh" type="submit" id="sBtn">Save settings</button>
         <p class="msg" id="sMsg" aria-live="polite"></p>
       </form>
     </details>
   </section>
 
-  <div class="foot" id="foot">Data lives in your Google Sheet. Re-enter a date to overwrite it, or fix it in the sheet. Undo is the sheet's version history. · Tracker v7</div>
+  <div class="foot" id="foot">Data lives in your Google Sheet. Re-enter a date to overwrite it, or fix it in the sheet. Undo is the sheet's version history. · Tracker v8</div>
 </div>
 
-<script src="config.js?v=7"></script>
-<script src="calc.js?v=7"></script>
-<script src="app.js?v=7"></script>
+<script src="config.js?v=8"></script>
+<script src="calc.js?v=8"></script>
+<script src="app.js?v=8"></script>
 </body></html>

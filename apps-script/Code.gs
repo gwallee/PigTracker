@@ -18,6 +18,7 @@ var HEADERS = {
   Settings: ["Key", "Value"]
 };
 var DEFAULTS = { name: "", target: 290, showDate: "2026-12-06" };
+var MAX_SHOWS = 2;
 
 /** Run once from the editor to create the three tabs with headers. */
 function setup() {
@@ -25,7 +26,7 @@ function setup() {
   ensureSheet_(SHEET_WEIGH);
   var s = ensureSheet_(SHEET_SETTINGS);
   if (s.getLastRow() < 2) {
-    s.getRange(2, 1, 3, 2).setValues([["PigName", ""], ["TargetLbs", DEFAULTS.target], ["ShowDate", DEFAULTS.showDate]]);
+    s.getRange(2, 1, 6, 2).setValues([["PigName", ""], ["Show1Name", "Show"], ["Show1Date", DEFAULTS.showDate], ["Show1Min", 150], ["Show1Max", 280], ["TaperPct", 100]]);
     s.getRange(4, 2).setNumberFormat("@");
   }
 }
@@ -112,16 +113,42 @@ function readWeighins_() {
   return out;
 }
 
+/**
+ * Settings tab → { name, shows:[{name,date,min,max}], taperPct, target, showDate }.
+ * Keys (case-insensitive): PigName, Show1Name, Show1Date, Show1Min, Show1Max,
+ * Show2Name, ... , TaperPct. The old TargetLbs/ShowDate pair is still read
+ * and becomes show 1 when no Show1Date exists. target/showDate are echoed
+ * for older copies of the page.
+ */
 function readSettings_() {
-  var s = { name: DEFAULTS.name, target: DEFAULTS.target, showDate: DEFAULTS.showDate };
-  var sh = sheet_(SHEET_SETTINGS);
-  if (!sh) return s;
+  var kv = {};
   rows_(SHEET_SETTINGS).forEach(function (r) {
-    var key = String(r.v[0] || "").trim().toLowerCase(), val = r.v[1];
-    if (key === "pigname") s.name = String(val == null ? "" : val).slice(0, 40);
-    else if (key === "targetlbs") { var t = toNum_(val); if (t !== null && t > 0) s.target = t; }
-    else if (key === "showdate") { var d = toDateStr_(val); if (d) s.showDate = d; }
+    var key = String(r.v[0] || "").trim().toLowerCase();
+    if (key) kv[key] = r.v[1];
   });
+  var s = { name: DEFAULTS.name, shows: [], taperPct: 100, target: DEFAULTS.target, showDate: DEFAULTS.showDate };
+  if (kv.pigname != null) s.name = String(kv.pigname).slice(0, 40);
+  for (var i = 1; i <= MAX_SHOWS; i++) {
+    var d = toDateStr_(kv["show" + i + "date"]);
+    if (!d) continue;
+    var mn = toNum_(kv["show" + i + "min"]), mx = toNum_(kv["show" + i + "max"]);
+    s.shows.push({
+      name: String(kv["show" + i + "name"] == null ? "" : kv["show" + i + "name"]).slice(0, 40) || ("Show " + i),
+      date: d,
+      min: mn !== null && mn > 0 ? mn : null,
+      max: mx !== null && mx > 0 ? mx : null
+    });
+  }
+  if (!s.shows.length) {
+    var ld = toDateStr_(kv.showdate), lt = toNum_(kv.targetlbs);
+    if (ld) s.shows.push({ name: "Show", date: ld, min: lt !== null && lt > 0 ? lt : null, max: lt !== null && lt > 0 ? lt : null });
+  }
+  var tp = toNum_(kv.taperpct);
+  if (tp !== null && tp >= 0 && tp <= 200) s.taperPct = tp;
+  if (s.shows.length) {
+    s.showDate = s.shows[0].date;
+    if (s.shows[0].max !== null) s.target = s.shows[0].max;
+  }
   return s;
 }
 
@@ -180,12 +207,35 @@ function upsertWeighin_(b) {
 
 function saveSettings_(b) {
   var name = String(b.name == null ? "" : b.name).replace(/^[=+\-@]+/, "").trim().slice(0, 40);
-  var target = requireNum_(b.target, 1, 1000, "Target must be between 1 and 1000 lb.");
-  var showDate = requireDate_(b.showDate);
-  var sh = ensureSheet_(SHEET_SETTINGS);
-  setKey_(sh, "PigName", name, "@");
-  setKey_(sh, "TargetLbs", target, null);
-  setKey_(sh, "ShowDate", showDate, "@");
+  var shows = Array.isArray(b.shows) ? b.shows : [];
+  // Old page: { target, showDate } → one show with min = max = target
+  if (!shows.length && b.showDate) shows = [{ name: "Show", date: b.showDate, min: b.target, max: b.target }];
+  if (!shows.length) throw new Error("At least one show is required.");
+  if (shows.length > MAX_SHOWS) throw new Error("At most " + MAX_SHOWS + " shows.");
+  var clean = [];
+  for (var i = 0; i < shows.length; i++) {
+    var sh = shows[i] || {};
+    var d = requireDate_(sh.date);
+    var mn = sh.min === null || sh.min === undefined || sh.min === "" ? null : requireNum_(sh.min, 1, 1000, "Show weights must be between 1 and 1000 lb.");
+    var mx = sh.max === null || sh.max === undefined || sh.max === "" ? null : requireNum_(sh.max, 1, 1000, "Show weights must be between 1 and 1000 lb.");
+    if (mn !== null && mx !== null && mn > mx) throw new Error("A show's min is above its max.");
+    if (i > 0 && d <= clean[i - 1].date) throw new Error("Shows must be in date order.");
+    clean.push({ name: String(sh.name == null ? "" : sh.name).replace(/^[=+\-@]+/, "").trim().slice(0, 40) || ("Show " + (i + 1)), date: d, min: mn, max: mx });
+  }
+  var taper = b.taperPct === null || b.taperPct === undefined || b.taperPct === "" ? 100 : requireNum_(b.taperPct, 0, 200, "Gain after first show must be 0–200%.");
+  var sh2 = ensureSheet_(SHEET_SETTINGS);
+  setKey_(sh2, "PigName", name, "@");
+  for (var k = 1; k <= MAX_SHOWS; k++) {
+    var c = clean[k - 1];
+    setKey_(sh2, "Show" + k + "Name", c ? c.name : "", "@");
+    setKey_(sh2, "Show" + k + "Date", c ? c.date : "", "@");
+    setKey_(sh2, "Show" + k + "Min", c && c.min !== null ? c.min : "", null);
+    setKey_(sh2, "Show" + k + "Max", c && c.max !== null ? c.max : "", null);
+  }
+  setKey_(sh2, "TaperPct", taper, null);
+  // keep the old keys in step for anything still reading them
+  setKey_(sh2, "TargetLbs", clean[0].max !== null ? clean[0].max : "", null);
+  setKey_(sh2, "ShowDate", clean[0].date, "@");
 }
 
 function setKey_(sh, key, value, fmt) {

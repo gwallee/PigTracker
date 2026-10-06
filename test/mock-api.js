@@ -8,7 +8,7 @@ const ROOT = path.join(__dirname, "..");
 const PORT = +(process.argv[2] || process.env.PORT || 8787);
 
 let sheet = fresh();
-function fresh() { return { settings: { name: "", target: 290, showDate: "2026-12-06" }, feed: [], weighins: [] }; }
+function fresh() { return { settings: { name: "", shows: [{ name: "Show", date: "2026-12-06", min: 150, max: 280 }], taperPct: 100, target: 280, showDate: "2026-12-06" }, feed: [], weighins: [] }; }
 const id = p => p + "_" + Math.random().toString(36).slice(2, 10);
 const isDate = s => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
 const all = () => ({ ok: true, settings: sheet.settings, feed: sheet.feed, weighins: sheet.weighins, sheetUrl: "https://docs.google.com/spreadsheets/d/mock", serverTime: new Date().toISOString() });
@@ -31,10 +31,22 @@ function handle(body) {
       if (hit) hit.lbs = lbs; else sheet.weighins.push({ id: id("w"), date: body.date, lbs });
       break;
     }
-    case "saveSettings":
-      if (!isDate(body.showDate)) throw new Error("Date must be YYYY-MM-DD.");
-      sheet.settings = { name: String(body.name || "").slice(0, 40), target: num(body.target, 1, 1000, "Target must be between 1 and 1000 lb."), showDate: body.showDate };
+    case "saveSettings": {
+      let shows = Array.isArray(body.shows) ? body.shows : [];
+      if (!shows.length && body.showDate) shows = [{ name: "Show", date: body.showDate, min: body.target, max: body.target }];
+      if (!shows.length || shows.length > 2) throw new Error("One or two shows are required.");
+      const clean = shows.map((sh, i) => {
+        if (!isDate(sh.date)) throw new Error("Date must be YYYY-MM-DD.");
+        const mn = sh.min == null || sh.min === "" ? null : num(sh.min, 1, 1000, "Show weights must be between 1 and 1000 lb.");
+        const mx = sh.max == null || sh.max === "" ? null : num(sh.max, 1, 1000, "Show weights must be between 1 and 1000 lb.");
+        if (mn != null && mx != null && mn > mx) throw new Error("A show's min is above its max.");
+        return { name: String(sh.name || "").slice(0, 40) || "Show " + (i + 1), date: sh.date, min: mn, max: mx };
+      });
+      if (clean.length === 2 && clean[1].date <= clean[0].date) throw new Error("Shows must be in date order.");
+      const taperPct = body.taperPct == null || body.taperPct === "" ? 100 : num(body.taperPct, 0, 200, "Gain after first show must be 0–200%.");
+      sheet.settings = { name: String(body.name || "").slice(0, 40), shows: clean, taperPct, target: clean[0].max ?? 290, showDate: clean[0].date };
       break;
+    }
     case "delete": {
       const arr = body.sheet === "Feed" ? sheet.feed : body.sheet === "Weighins" ? sheet.weighins : null;
       if (!arr) throw new Error("sheet must be Feed or Weighins.");
