@@ -371,17 +371,25 @@
     }
     if (inX(c.today)) {
       el("line", { x1: X(c.today), x2: X(c.today), y1: T, y2: FB, stroke: ink3, "stroke-width": 1 });
-      el("text", { x: X(c.today) + 4, y: T + 10, "text-anchor": "start" }, "today");
+      el("text", { x: X(c.today) + 4, y: T + 22, "text-anchor": "start" }, "today");
     }
     // ----- show ranges: a band at each show date from min to max (open at the bottom if min is off-scale)
     const bandW = narrow ? 10 : 14;
     c.shows.forEach(sh => {
-      if (!inX(sh.date) || (sh.min == null && sh.max == null)) return;
-      const x = X(sh.date), top = sh.max != null ? Y(Math.min(sh.max, hi)) : T, bot = sh.min != null && inY(sh.min) ? Y(sh.min) : PB;
+      if (!inX(sh.date)) return;
+      const x = X(sh.date);
+      // every show date gets a marker line and its name, so a show without a range is still visible
+      el("line", { x1: x, x2: x, y1: T, y2: PB, stroke: "var(--good)", "stroke-width": 1, "stroke-dasharray": "2 3", "stroke-opacity": .8 });
+      if (!narrow || sh.min == null && sh.max == null) {
+        const na = x > W - 110 ? "end" : "start";
+        el("text", { x: na === "end" ? x - 5 : x + 5, y: T + 10, "text-anchor": na }, sh.name + (sh.min == null && sh.max == null ? " · no range" : "")).style.fill = "var(--good)";
+      }
+      if (sh.min == null && sh.max == null) return;
+      const top = sh.max != null ? Y(Math.min(sh.max, hi)) : T, bot = sh.min != null && inY(sh.min) ? Y(sh.min) : PB;
       el("rect", { x: x - bandW / 2, y: top, width: bandW, height: Math.max(2, bot - top), rx: 3, fill: "var(--good)", "fill-opacity": .18 });
       el("line", { x1: x - bandW / 2, x2: x + bandW / 2, y1: top, y2: top, stroke: "var(--good)", "stroke-width": 2.5 });
       if (sh.min != null && inY(sh.min)) el("line", { x1: x - bandW / 2, x2: x + bandW / 2, y1: bot, y2: bot, stroke: "var(--good)", "stroke-width": 2.5 });
-      const lbl = (narrow ? "" : sh.name + " ") + (sh.min != null && sh.max != null && sh.min !== sh.max ? sh.min + "–" + sh.max : (sh.max != null ? sh.max : sh.min));
+      const lbl = sh.min != null && sh.max != null && sh.min !== sh.max ? sh.min + "–" + sh.max : (sh.max != null ? "max " + sh.max : "min " + sh.min);
       const anchor = x < L + 120 ? "start" : "end", lx = anchor === "end" ? x - bandW / 2 - 6 : x + bandW / 2 + 6;
       sh._labelY = top - 6; sh._labelAnchor = anchor;
       el("text", { x: lx, y: top - 6, "text-anchor": anchor }, lbl).style.fill = "var(--good)";
@@ -446,11 +454,15 @@
       const inRange = [];
       const r0 = c.rateOn(start); if (r0 != null) inRange.push({ date: start, lbs: r0, carried: true });
       c.F.forEach(f => { if (f.date > start && f.date <= end) inRange.push(f); });
-      let path = "";
+      let path = "", lastLabelX = -Infinity;
       inRange.forEach((f, i) => {
         const x = X(f.date), y = FY(f.lbs);
         path += (i === 0 ? "M" + x + "," + y : " H" + x + " V" + y);
-        el("text", { x: x + 4, y: y - 5, "text-anchor": "start" }, f2(f.lbs)).style.fill = "var(--feed)";
+        const isLast = i === inRange.length - 1;
+        if (isLast || x - lastLabelX >= 34) { // crowded changes: label only the ones that fit, always the latest
+          el("text", { x: x + 4, y: y - 5, "text-anchor": "start" }, f2(f.lbs)).style.fill = "var(--feed)";
+          lastLabelX = x;
+        }
       });
       if (inRange.length) { path += " H" + (W - R); el("path", { d: path, fill: "none", stroke: "var(--feed)", "stroke-width": 2.5 }); }
     }
