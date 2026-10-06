@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="en" data-version="7"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Show Pig Tracker</title>
 <meta name="color-scheme" content="light dark">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -65,6 +65,8 @@ header .sub{color:var(--ink-2);margin-top:4px}
 
 .banner{background:var(--feed-soft);color:var(--ink);border:1px dashed var(--feed);border-radius:8px;padding:10px 14px;font-size:14px;overflow-wrap:anywhere}
 .banner.bad{background:var(--bad-soft);border-color:var(--bad)}
+.banner.update{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;background:var(--ribbon-soft);border:1px solid var(--ribbon)}
+.banner.update[hidden]{display:none}
 .banner[hidden]{display:none}
 .banner code{font-family:var(--mono);font-size:13px}
 
@@ -203,6 +205,7 @@ details.settings form{margin-top:12px}
     </span>
   </div>
 
+  <div class="banner update" id="updateBanner" hidden><span>A newer version of the tracker is available.</span><button class="refresh" type="button" id="updateBtn">Update now</button></div>
   <div class="banner" id="configBanner" hidden><b>Not connected to a sheet yet.</b> Set <code>API_URL</code> in <code>config.js</code> to your Apps Script web app URL. Until then, entries stay in this browser tab only.</div>
   <div class="banner bad" id="netBanner" hidden></div>
 
@@ -321,10 +324,10 @@ details.settings form{margin-top:12px}
     </details>
   </section>
 
-  <div class="foot" id="foot">Data lives in your Google Sheet. Re-enter a date to overwrite it, or fix it in the sheet. Undo is the sheet's version history. · Tracker v6</div>
+  <div class="foot" id="foot">Data lives in your Google Sheet. Re-enter a date to overwrite it, or fix it in the sheet. Undo is the sheet's version history. · Tracker v7</div>
 </div>
 
-<script src="config.js?v=6"></script>
-<script src="calc.js?v=6"></script>
-<script src="app.js?v=6"></script>
+<script src="config.js?v=7"></script>
+<script src="calc.js?v=7"></script>
+<script src="app.js?v=7"></script>
 </body></html>

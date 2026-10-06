@@ -465,13 +465,41 @@
   document.querySelectorAll(".seg[data-range]").forEach(b => b.addEventListener("click", () => {
     state.range = b.dataset.range; try { localStorage.setItem(RANGE_KEY, state.range); } catch (_) {} render();
   }));
-  $("refreshBtn").addEventListener("click", load);
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") load(); });
+  $("refreshBtn").addEventListener("click", () => { load(); checkForUpdate(); });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { load(); checkForUpdate(); } });
   let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(render, 150); });
   setInterval(tickUpdated, 30000);
 
+  // ---------- update check ----------
+  // GitHub Pages lets phones cache index.html for a long time, so new
+  // releases don't show up on their own. version.json is fetched fresh;
+  // if it's newer than the page we're running, offer a one-tap update
+  // that refetches the files past the cache and reloads.
+  const pageVersion = parseInt(document.documentElement.dataset.version, 10) || 0;
+  const SITE_FILES = ["index.html", "app.js", "calc.js", "config.js"];
+  let newerVersion = null;
+  async function checkForUpdate() {
+    if (!pageVersion || location.protocol === "file:") return;
+    try {
+      const r = await fetch("version.json?t=" + Date.now(), { cache: "no-store" });
+      const j = await r.json();
+      if (Number.isInteger(j.v) && j.v > pageVersion) { newerVersion = j.v; $("updateBanner").hidden = false; }
+    } catch (_) { /* offline or not deployed: ignore */ }
+  }
+  async function applyUpdate() {
+    const btn = $("updateBtn"); btn.disabled = true; btn.textContent = "Updating…";
+    const v = newerVersion || Date.now();
+    try {
+      // cache: "reload" bypasses the cache and stores the fresh copy under the URL the page uses
+      await Promise.all(SITE_FILES.map(f => fetch(f === "index.html" ? location.pathname : f + "?v=" + v, { cache: "reload" })));
+      await fetch("./", { cache: "reload" }).catch(() => {});
+    } catch (_) { /* fall through to reload anyway */ }
+    location.reload();
+  }
+  $("updateBtn").addEventListener("click", applyUpdate);
+
   // ---------- boot ----------
-  fillSettings(); render(); showSheetLink();
+  fillSettings(); render(); showSheetLink(); checkForUpdate();
   if (!connected) {
     $("configBanner").hidden = false; $("refreshBtn").hidden = true; tickUpdated();
   } else {

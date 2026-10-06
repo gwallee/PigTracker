@@ -182,6 +182,19 @@ async function main() {
       await page.click('.seg[data-range="all"]');
     });
 
+    await check("update banner appears when version.json is newer, Update reloads", async () => {
+      assert.equal(await page.isHidden("#updateBanner"), true);
+      await page.route("**/version.json*", r => r.fulfill({ contentType: "application/json", body: JSON.stringify({ v: 9999 }) }));
+      await page.click("#refreshBtn");
+      await page.waitForFunction(() => !document.getElementById("updateBanner").hidden);
+      const reloads = [];
+      await page.route(/\/(app|calc|config)\.js\?v=9999$/, r => { reloads.push(r.request().url()); r.continue(); });
+      await Promise.all([page.waitForNavigation(), page.click("#updateBtn")]);
+      assert.equal(reloads.length, 3, "refetched: " + reloads.join(", "));
+      await page.unroute("**/version.json*");
+      await page.waitForFunction(() => /^Updated/.test(document.getElementById("updated").textContent));
+    });
+
     await check("390px: no horizontal scroll", async () => {
       const m = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth, bw: document.body.scrollWidth }));
       assert.ok(m.sw <= m.cw, `scrollWidth ${m.sw} > clientWidth ${m.cw}`);

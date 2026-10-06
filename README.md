@@ -14,6 +14,7 @@ index.html              page markup and CSS
 app.js                  fetching, caching, forms, rendering, chart
 calc.js                 all the math (periods, feed totals, projection); shared with the tests
 config.js               API_URL, SHEET_URL, ALLOW_DELETE, FCR_THRESHOLDS  ← the only file you edit
+version.json            site version; bump with scripts/bump-version.js after each change
 apps-script/Code.gs     Apps Script source, pasted into the Sheet's script editor
 apps-script/appsscript.json   optional manifest (timezone + web app settings)
 test/                   unit tests, a local mock of the API, and browser acceptance checks
@@ -71,7 +72,7 @@ test/                   unit tests, a local mock of the API, and browser accepta
 
 That's it. The page fetches the Sheet on load, after every save, whenever you return to the tab, and when you tap **Refresh**.
 
-**After changing the site's code**, bump the `?v=` number on the three `<script>` tags at the bottom of `index.html` and the "Tracker vN" stamp in the footer, so you can tell from a phone which version it's showing. Browsers (phones especially) cache the old files otherwise, and a new version number forces them to fetch the new ones.
+**After changing the site's code**, run `node scripts/bump-version.js` and commit. It raises the number in `version.json`, the `?v=` script tags and the "Tracker vN" footer stamp together. Open pages check `version.json` on load, on Refresh and when you come back to the tab, and show an **Update now** banner when a newer version is published, which fetches the new files past the phone's cache and reloads. Without the bump, phones can keep showing the old page for a long time. Browsers (phones especially) cache the old files otherwise, and a new version number forces them to fetch the new ones.
 
 ---
 
