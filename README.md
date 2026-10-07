@@ -88,6 +88,7 @@ That's it. The page fetches the Sheet on load, after every save, whenever you re
 ### Reading the chart
 
 - **To show day / Last 6 / Last 3** above the chart set the range. The zoomed views tighten the vertical scale to those weigh-ins, so a few pounds of difference becomes visible. The choice is remembered on that device.
+- **⤢ Full screen** opens the chart over the whole screen, using the full height as well as the width. Turn the phone sideways for the widest view. The range buttons and the tap readout come along; Close or Escape returns to the page.
 - **Tap a weigh-in point** to highlight it and show its details under the chart: weight, date, gain and days since the previous weigh-in, lb/day, feed for that period and feed : gain. Tap it again, or tap empty chart space, to clear. The points are keyboard reachable too (Tab, then Enter).
 
 ### How the numbers are computed

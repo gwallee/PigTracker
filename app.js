@@ -18,7 +18,7 @@
 
   const state = {
     weights: [], feeds: [], settings: { ...DEFAULTS },
-    basis: "last", range: "all", selected: null, hover: null,
+    basis: "last", range: "all", selected: null, hover: null, fullscreen: false,
     updatedAt: null, fromCache: false, loaded: false, busy: false
   };
   try { const b = localStorage.getItem(BASIS_KEY); if (["last", "recent", "all"].includes(b)) state.basis = b; } catch (_) {}
@@ -305,7 +305,10 @@
     lastCalc = c;
     const svg = $("chart"), s = state.settings;
     const W = Math.max(300, Math.round(svg.parentNode.clientWidth || 720)), narrow = W < 520;
-    const L = narrow ? 36 : 46, R = 12, T = 14, PB = narrow ? 190 : 210, FT = PB + 24, FB = PB + 60, XA = PB + 80;
+    // Normal mode: a fixed plot height scaled by width. Full screen: use the box's actual height.
+    let PB = narrow ? 190 : 210;
+    if (state.fullscreen) { const H = svg.parentNode.clientHeight || 300; PB = Math.max(150, H - 88); }
+    const L = narrow ? 36 : 46, R = 12, T = 14, FT = PB + 24, FB = PB + 60, XA = PB + 80;
     svg.setAttribute("viewBox", "0 0 " + W + " " + (XA + 8));
     const NS = "http://www.w3.org/2000/svg";
     svg.innerHTML = "";
@@ -435,7 +438,9 @@
       if (isSel) el("circle", { cx: x, cy: y, r: 10, fill: "var(--ribbon)", "fill-opacity": .18 });
       el("circle", { cx: x, cy: y, r: isLast || isSel ? 5.5 : 4, fill: isLast || isSel ? "var(--ink)" : "var(--surface)", stroke: isSel ? "var(--ribbon)" : "var(--ink)", "stroke-width": isSel ? 2.5 : 2 });
     });
-    if (inX(c.last.date) && c.last.date !== selDate) el("text", { x: X(c.last.date), y: Y(c.last.lbs) - 12, "text-anchor": "middle" }, f1(c.last.lbs)).style.fill = "var(--ink)";
+    const selW = selDate ? c.W.find(p => p.date === selDate) : null;
+    const selNear = selW && Math.abs(X(selW.date) - X(c.last.date)) < 90; // its label would run into the last-point label
+    if (inX(c.last.date) && !selNear) el("text", { x: X(c.last.date), y: Y(c.last.lbs) - 12, "text-anchor": "middle" }, f1(c.last.lbs)).style.fill = "var(--ink)";
     if (selDate) {
       const w = c.W.find(p => p.date === selDate);
       if (w && inX(w.date)) {
@@ -593,8 +598,39 @@
   }));
   $("refreshBtn").addEventListener("click", () => { load(); checkForUpdate(); });
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { load(); checkForUpdate(); } });
-  let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(render, 150); });
+  let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { fsHint(); render(); }, 150); });
   setInterval(tickUpdated, 30000);
+
+  // ---------- full-screen chart ----------
+  // iPhones only allow true full screen for video, so the chart, its range
+  // buttons and the readout are moved into a fixed overlay. Where the
+  // Fullscreen API exists (Android, desktop) the overlay also goes native.
+  const fsOverlay = $("fsOverlay"), fsBody = $("fsBody"), fsTools = $("fsTools");
+  const chartSlot = $("chartSlot"), chartTools = $("chartTools"), rangeGroup = chartTools.querySelector(".range");
+  function fsHint() { $("fsHint").hidden = !(state.fullscreen && window.innerHeight > window.innerWidth); }
+  function openFullscreen() {
+    if (state.fullscreen) return;
+    state.fullscreen = true;
+    fsBody.appendChild(chartSlot.querySelector(".chart-box")); fsBody.appendChild($("readout"));
+    fsTools.appendChild(rangeGroup);
+    fsOverlay.hidden = false; document.body.classList.add("fs-open");
+    if (fsOverlay.requestFullscreen) fsOverlay.requestFullscreen().catch(() => {});
+    fsHint(); render(); $("fsClose").focus();
+  }
+  function closeFullscreen() {
+    if (!state.fullscreen) return;
+    state.fullscreen = false;
+    chartSlot.appendChild(fsBody.querySelector(".chart-box")); chartSlot.appendChild($("readout"));
+    chartTools.insertBefore(rangeGroup, $("fsBtn"));
+    fsOverlay.hidden = true; document.body.classList.remove("fs-open");
+    if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
+    render(); $("fsBtn").focus();
+  }
+  $("fsBtn").addEventListener("click", openFullscreen);
+  $("fsClose").addEventListener("click", closeFullscreen);
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && state.fullscreen) closeFullscreen(); });
+  document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement && state.fullscreen) closeFullscreen(); });
+  window.addEventListener("orientationchange", () => setTimeout(() => { fsHint(); render(); }, 200));
 
   // ---------- update check ----------
   // GitHub Pages lets phones cache index.html for a long time, so new

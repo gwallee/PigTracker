@@ -213,6 +213,37 @@ async function main() {
       await page.waitForFunction(() => /^Updated/.test(document.getElementById("updated").textContent));
     });
 
+    await check("full-screen chart: overlay fills a landscape viewport, close restores", async () => {
+      const vbH = async () => +(await page.getAttribute("#chart", "viewBox")).split(" ")[3];
+      const normalH = await vbH();
+      await page.setViewportSize({ width: 844, height: 390 });
+      await page.click("#fsBtn");
+      await page.waitForFunction(() => !document.getElementById("fsOverlay").hidden);
+      assert.ok(await page.locator("#fsBody #chart").count() === 1, "chart moved into the overlay");
+      assert.ok(await page.locator("#fsTools .range").count() === 1, "range buttons moved into the overlay");
+      const box = await page.locator("#fsOverlay").boundingBox();
+      assert.ok(box.width >= 840 && box.height >= 380, "overlay covers the viewport: " + JSON.stringify(box));
+      const vb = (await page.getAttribute("#chart", "viewBox")).split(" ").map(Number);
+      assert.ok(vb[2] > 700, "chart uses the full width: " + vb[2]);
+      assert.ok(await page.isHidden("#fsHint"), "no rotate hint in landscape");
+      // points still tappable in full screen
+      await page.locator("#chart .hit").nth(1).click();
+      assert.match(await page.textContent("#fsBody #readout"), /218\.0 lb/);
+      await page.click('#fsTools .seg[data-range="3"]');
+      assert.equal(await page.locator("#chart .hit").count(), 3);
+      await page.click('#fsTools .seg[data-range="all"]');
+      // portrait shows the rotate hint and the chart gets taller than the inline one
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.waitForFunction(() => !document.getElementById("fsHint").hidden);
+      assert.ok((await vbH()) > normalH, "full-screen chart is taller than inline");
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(() => document.getElementById("fsOverlay").hidden);
+      assert.equal(await page.locator("#chartSlot #chart").count(), 1);
+      assert.equal(await page.locator("#chartTools .range").count(), 1);
+      assert.equal(await vbH(), normalH);
+      await page.click("#chart", { position: { x: 5, y: 5 } });
+    });
+
     await check("390px: no horizontal scroll", async () => {
       const m = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth, bw: document.body.scrollWidth }));
       assert.ok(m.sw <= m.cw, `scrollWidth ${m.sw} > clientWidth ${m.cw}`);

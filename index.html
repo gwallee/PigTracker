@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-version="9"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="en" data-version="10"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Show Pig Tracker</title>
 <meta name="color-scheme" content="light dark">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -109,6 +109,33 @@ header .sub{color:var(--ink-2);margin-top:4px}
 svg.chart{width:100%;height:auto;display:block}
 svg.chart text{font-family:var(--mono);font-size:11px;fill:var(--ink-3)}
 .chart-head{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px 12px;margin-bottom:12px}
+.chart-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.fs-btn{white-space:nowrap}
+/* full-screen overlay: the chart, range buttons and readout are moved into it while open */
+.fs{position:fixed;inset:0;z-index:50;background:var(--ground);display:flex;flex-direction:column;padding:max(8px,env(safe-area-inset-top)) max(10px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left))}
+.fs[hidden]{display:none}
+.fs-bar{display:flex;align-items:center;gap:10px;flex:none;min-height:40px}
+.fs-title{font-family:var(--display);font-size:20px;font-weight:600;flex:none}
+.fs-tools{display:flex;gap:8px;flex:1 1 auto;min-width:0;justify-content:center}
+.fs-tools .basis{margin:0;flex-wrap:nowrap}
+.fs-close{flex:none}
+.fs-body{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+.fs-body .chart-box{flex:1 1 auto;min-height:0;display:flex}
+.fs-body svg.chart{width:100%;height:100%;max-height:100%}
+.fs-body .readout{flex:none;margin-top:6px;min-height:36px}
+.fs-hint{flex:none;text-align:center;font-size:13px;color:var(--ink-3);padding-top:6px}
+.fs-hint[hidden]{display:none}
+body.fs-open{overflow:hidden}
+@media (max-width:520px){
+  .fs-title{display:none}
+  .fs-tools{justify-content:flex-start}
+  .fs-tools .seg,.fs-close{padding:6px 9px;font-size:12px;white-space:nowrap}
+}
+@media (max-height:420px){
+  .fs-title{display:none}
+  .fs-body .readout{padding:6px 10px;font-size:13px}
+  .fs-body .readout b{font-size:18px}
+}
 .chart-head h2{margin-bottom:0}
 .basis.range{margin-top:0}
 .readout{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;min-height:40px;margin-top:8px;padding:8px 12px;border-radius:8px;background:var(--sunk);font-size:14px;color:var(--ink-2)}
@@ -284,14 +311,19 @@ ul.shows li .rg{color:var(--ink-3);font-size:13px}
   <section class="panel">
     <div class="chart-head">
       <h2>Weight curve</h2>
-      <div class="basis range" role="group" aria-label="Chart range">
-        <button class="seg" type="button" data-range="all" aria-pressed="true">To show day</button>
-        <button class="seg" type="button" data-range="6" aria-pressed="false">Last 6</button>
-        <button class="seg" type="button" data-range="3" aria-pressed="false">Last 3</button>
+      <div class="chart-tools" id="chartTools">
+        <div class="basis range" role="group" aria-label="Chart range">
+          <button class="seg" type="button" data-range="all" aria-pressed="true">To show day</button>
+          <button class="seg" type="button" data-range="6" aria-pressed="false">Last 6</button>
+          <button class="seg" type="button" data-range="3" aria-pressed="false">Last 3</button>
+        </div>
+        <button class="seg fs-btn" type="button" id="fsBtn" aria-label="View chart full screen">⤢ Full screen</button>
       </div>
     </div>
-    <div class="chart-box"><svg class="chart" id="chart" viewBox="0 0 720 300" role="img" aria-label="Weight over time with projection to show date"></svg></div>
-    <div class="readout" id="readout" aria-live="polite"><span class="hint">Tap a weigh-in on the chart for its details.</span></div>
+    <div class="chart-slot" id="chartSlot">
+      <div class="chart-box"><svg class="chart" id="chart" viewBox="0 0 720 300" role="img" aria-label="Weight over time with projection to show date"></svg></div>
+      <div class="readout" id="readout" aria-live="polite"><span class="hint">Tap a weigh-in on the chart for its details.</span></div>
+    </div>
     <div class="legend">
       <span><i style="background:var(--ink)"></i>Weigh-ins</span>
       <span><i style="background:var(--ribbon)"></i>Projection</span>
@@ -356,10 +388,20 @@ ul.shows li .rg{color:var(--ink-3);font-size:13px}
     </details>
   </section>
 
-  <div class="foot" id="foot">Data lives in your Google Sheet. Re-enter a date to overwrite it, or fix it in the sheet. Undo is the sheet's version history. · Tracker v9</div>
+  <div class="foot" id="foot">Data lives in your Google Sheet. Re-enter a date to overwrite it, or fix it in the sheet. Undo is the sheet's version history. · Tracker v10</div>
 </div>
 
-<script src="config.js?v=9"></script>
-<script src="calc.js?v=9"></script>
-<script src="app.js?v=9"></script>
+<div class="fs" id="fsOverlay" hidden role="dialog" aria-modal="true" aria-label="Weight curve, full screen">
+  <div class="fs-bar">
+    <span class="fs-title" id="fsTitle">Weight curve</span>
+    <span class="fs-tools" id="fsTools"></span>
+    <button class="seg fs-close" type="button" id="fsClose" aria-label="Close full screen">✕ Close</button>
+  </div>
+  <div class="fs-body" id="fsBody"></div>
+  <div class="fs-hint" id="fsHint" hidden>Turn your phone sideways for a wider view.</div>
+</div>
+
+<script src="config.js?v=10"></script>
+<script src="calc.js?v=10"></script>
+<script src="app.js?v=10"></script>
 </body></html>
